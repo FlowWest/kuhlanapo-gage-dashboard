@@ -1,0 +1,13 @@
+name: kuhlanapo-gage-dashboard
+title: kuhlanapo-gage-dashboard
+username: flowwest
+account: flowwest
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 16374293
+bundleId: 11403014
+url: https://flowwest.shinyapps.io/kuhlanapo-gage-dashboard/
+version: 1
+asMultiple: FALSE
+asStatic: FALSE
+ignoredFiles: app_nocache_backup.R

@@ -1,0 +1,53 @@
+name: HydroVu Daily Refresh
+
+on:
+  schedule:
+    # 7:15am Pacific = 14:15 UTC (standard), 15:15 UTC (DST)
+    # Run twice; script enforces PT time window
+    - cron: "15 14 * * *"
+    - cron: "15 15 * * *"
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Set up R
+        uses: r-lib/actions/setup-r@v2
+
+      - name: Install system deps
+        run: sudo apt-get install -y libcurl4-openssl-dev
+
+      - name: Install R packages
+        uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          packages: |
+            shiny
+            httr
+            jsonlite
+            dplyr
+            lubridate
+            tidyr
+            purrr
+            tibble
+
+      - name: Fetch HydroVu data
+        env:
+          HYDROVU_CLIENT_ID: ${{ secrets.HYDROVU_CLIENT_ID }}
+          HYDROVU_CLIENT_SECRET: ${{ secrets.HYDROVU_CLIENT_SECRET }}
+        run: |
+          Rscript scripts/fetch_hydrovu.R
+
+      - name: Commit updated data
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add data/gage_data.rds
+          git commit -m "Daily HydroVu refresh" || echo "No changes"
+          git push

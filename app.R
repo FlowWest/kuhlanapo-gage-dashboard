@@ -249,16 +249,20 @@ ui <- fluidPage(
 server <- function(input, output, session) {
   
   ts_data <- reactive({
-    cached <- read_cached_data()
-    if (!is.null(cached)) {
-      if (needs_daily_refresh()) refresh_cache_async()
-      return(cached)
-    }
-    token <- get_access_token(CLIENT_ID, CLIENT_SECRET)
-    fresh <- fetch_all_gage_data(token)
-    write_cache(fresh)
-    fresh
+    readRDS("data/gage_data.rds")
   })
+  
+#  ts_data <- reactive({
+#    cached <- read_cached_data()
+#    if (!is.null(cached)) {
+#      if (needs_daily_refresh()) refresh_cache_async()
+#      return(cached)
+#    }
+#    token <- get_access_token(CLIENT_ID, CLIENT_SECRET)
+#    fresh <- fetch_all_gage_data(token)
+#    write_cache(fresh)
+#    fresh
+#  })
   
   # output$cache_info <- renderPrint({
   #   list(
@@ -275,7 +279,7 @@ server <- function(input, output, session) {
   output$depth_plot <- renderPlot({
     df <- ts_data() |>
       filter(tolower(parm_name) == "depth") |>
-      mutate(value = if_else(value > 0, value / 0.3048, NA_real_))
+      mutate(value = if_else(value > 0, value / 0.3048, 0))
     
     req(nrow(df) > 0)
     
