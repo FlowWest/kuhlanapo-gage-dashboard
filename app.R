@@ -10,8 +10,11 @@ library(tidyr)
 library(janitor)
 library(ggrepel)
 library(scales)
+library(plotly)
 
 ## CONFIG ======================================================================
+
+INTERACTIVE <- T
 
 CACHE_TTL <- 24 * 60 * 60   # 24 hours
 cache_dir <- file.path(getwd(), ".cache", "hydrovu")
@@ -97,8 +100,8 @@ refresh_cache_async <- function() {
 ## UI ==========================================================================
 
 ui <- fluidPage(
-  fluidRow(column(12, plotOutput("depth_plot", height = 400))),
-  fluidRow(column(12, plotOutput("temp_plot",  height = 400)))
+  fluidRow(column(12, if (!INTERACTIVE) plotOutput("depth_plot", height = 400) else plotlyOutput("depth_plot", height = 400))),
+  fluidRow(column(12, if (!INTERACTIVE) plotOutput("temp_plot",  height = 400) else plotlyOutput("temp_plot",  height = 400)))
 )
 
 ## SERVER ======================================================================
@@ -144,31 +147,139 @@ server <- function(input, output, session) {
       glimpse()
   })
   
-  output$depth_plot <- renderPlot({
-
-    df_pivot() |>
-      ggplot(aes(x = timestamp, y = depth, color = site)) +
-      geom_line() +
-      geom_text_repel(aes(y = depth, label = sprintf("%.1f", depth)), data = df_latest(), hjust=1) +
-      theme_minimal() +
-      labs(y = "Depth (ft)", x = NULL, color = "Gage") +
-      scale_color_brewer(palette = "Paired") 
-  })
-  
-  output$temp_plot <- renderPlot({
-
-    df_pivot() |>
-      ggplot(aes(x = timestamp, color = site)) +
-      geom_line(aes(y = air_temperature, linetype = "Air Temperature")) +
-      geom_line(aes(y = water_temperature, linetype = "Water Temperature")) +
-      theme_minimal() +
-      labs(y = "Temperature (°F)", x = NULL, color = "Gage") +
-      scale_color_brewer(palette = "Paired") +
-      scale_linetype_manual(
-        name = "Parameter",
-        values = c("Water Temperature" = "solid", "Air Temperature" = "dashed")
+  output$depth_plot <- if (!INTERACTIVE) {
+    
+    renderPlot({
+      base_df  <- df_pivot()
+      label_df <- df_latest()
+      
+      req(nrow(base_df) > 0, nrow(label_df) > 0)
+      
+      ggplot(base_df, aes(x = timestamp, y = depth, color = site)) +
+        geom_line() +
+        geom_text_repel(
+          data = label_df,
+          aes(y = depth, label = sprintf("%.1f", depth)),
+          hjust = 1
+        ) +
+        theme_minimal() +
+        labs(y = "Depth (ft)", x = NULL, color = "Gage") +
+        scale_color_brewer(palette = "Paired") + 
+        theme(
+          legend.position = "bottom",
+          legend.box = "horizontal"
+        )
+      
+    })
+    
+  } else {
+    
+    renderPlotly({
+      base_df <- df_pivot()
+      req(nrow(base_df) > 0)
+      
+      plot_ly(
+        base_df,
+        x = ~timestamp,
+        y = ~depth,
+        color = ~site,
+        type = "scatter",
+        mode = "lines",
+        hoverinfo = "text+x",
+        text = ~paste(site, "\n", "Depth", sprintf("%.1f ft", depth)),
+        connectgaps = FALSE
+      ) |> layout(
+        legend = list(
+          orientation = "h",
+          x = 0.5,
+          xanchor = "center",
+          y = -0.25
+        ),
+        margin = list(b = 80),
+        xaxis = list(title = ""),
+        yaxis = list(title = "Depth (ft)")
       )
-  })
+    })
+    
+  }
+  
+  output$temp_plot <- if (!INTERACTIVE) {
+    
+    renderPlot({
+      
+      base_df <- df_pivot()
+      req(nrow(base_df) > 0)
+      
+      ggplot(base_df, aes(x = timestamp, color = site)) +
+        geom_line(aes(y = air_temperature, linetype = "Air Temperature")) +
+        geom_line(aes(y = water_temperature, linetype = "Water Temperature")) +
+        theme_minimal() +
+        labs(
+          y = "Temperature (°F)",
+          x = NULL,
+          color = "Gage",
+          linetype = "Parameter"
+        ) +
+        scale_color_brewer(palette = "Paired") +
+        scale_linetype_manual(
+          values = c(
+            "Water Temperature" = "solid",
+            "Air Temperature"   = "dashed"
+          )
+        ) + 
+        theme(
+          legend.position = "bottom",
+          legend.box = "horizontal"
+        )
+      
+    })
+    
+  } else {
+    
+    renderPlotly({
+      
+      temp_long <- df_pivot() |>
+        pivot_longer(
+          c(air_temperature, water_temperature),
+          names_to = "parameter",
+          values_to = "temperature"
+        ) |>
+        mutate(parameter = case_when(
+          parameter == "air_temperature" ~ "Air Temperature",
+          parameter == "water_temperature" ~ "Water Temperature"
+        ))
+      
+      req(nrow(temp_long) > 0)
+      
+      plot_ly(
+        temp_long,
+        x = ~timestamp,
+        y = ~temperature,
+        color = ~site,
+        linetype = ~parameter,
+        text = ~paste(site, "\n", parameter, sprintf("%.1f °F", temperature)),
+        hoverinfo = "text+x",
+        type = "scatter",
+        mode = "lines",
+        split = ~interaction(site, parameter),
+        name = ~paste0(ifelse(parameter == "Air Temperature", "Air", "Water"), " - ", site),
+        connectgaps = FALSE
+      ) |> layout(
+        legend = list(
+          orientation = "h",
+          x = 0.5,
+          xanchor = "center",
+          y = -0.25
+        ),
+        margin = list(b = 80),
+        xaxis = list(title = ""),
+        yaxis = list(title = "Temperature (°F)")
+      )
+      
+    })
+    
+  }
+  
 }
 
 shinyApp(ui, server)
