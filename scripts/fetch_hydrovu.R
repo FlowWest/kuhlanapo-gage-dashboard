@@ -57,7 +57,8 @@ get_locations <- function(token) {
 get_parameter_names <- function(token) {
   GET(paste0(BASE_API, "/sispec/friendlynames"),
       add_headers(Authorization = paste("Bearer", token))) |>
-    content("parsed", type = "application/json")$parameters |>
+    content("parsed", type = "application/json") |>
+    (\(x) x$parameters)() |>
     enframe(name = "parm_id", value = "parm_name") |>
     unnest(parm_name)
 }
@@ -140,12 +141,7 @@ new_data <- locs |>
   )) |>
   unnest(result) |>
   mutate(
-    timestamp = as_datetime(timestamp, tz = "UTC"),
-    parm_name_modified = case_when(
-      parm_name == "Temperature" & type == "vulink" ~ "Air Temperature",
-      parm_name == "Temperature" ~ "Water Temperature",
-      TRUE ~ parm_name
-    )
+    timestamp = as_datetime(timestamp, tz = "UTC")
   )
 
 ## APPEND + DEDUPLICATE =========================================================
