@@ -132,6 +132,7 @@ server <- function(input, output, session) {
       pivot_wider(names_from = parm_name_modified, values_from = value) |>
       clean_names() |>
       mutate(water_temperature = if_else(depth > 0, water_temperature, NA)) |>
+      mutate(site = factor(site, levels = unique(gages$site))) |>
       glimpse()
   })
   

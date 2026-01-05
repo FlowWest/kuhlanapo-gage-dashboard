@@ -5,7 +5,7 @@ account: flowwest
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 16374293
-bundleId: 11403265
+bundleId: 11403322
 url: https://flowwest.shinyapps.io/kuhlanapo-gage-dashboard/
 version: 1
 asMultiple: FALSE
