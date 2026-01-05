@@ -11,6 +11,7 @@ on:
 jobs:
   refresh:
     runs-on: ubuntu-latest
+    environment: hydrovu
 
     steps:
       - name: Checkout repo
