@@ -6,6 +6,10 @@ library(lubridate)
 library(ggplot2)
 library(purrr)
 library(tibble)
+library(tidyr)
+library(janitor)
+library(ggrepel)
+library(scales)
 
 ## CONFIG ======================================================================
 
@@ -126,8 +130,16 @@ server <- function(input, output, session) {
         parm_name == "Temperature" ~ value * 9/5 + 32)) |>
       select(code, site, timestamp, parm_name_modified, value) |>
       pivot_wider(names_from = parm_name_modified, values_from = value) |>
-      janitor::clean_names() |>
+      clean_names() |>
       mutate(water_temperature = if_else(depth > 0, water_temperature, NA)) |>
+      glimpse()
+  })
+  
+  df_latest <- reactive({
+    df_pivot() |>
+      group_by(code, site) |>
+      filter(timestamp == max(timestamp)) |>
+      ungroup() |>
       glimpse()
   })
   
@@ -136,9 +148,10 @@ server <- function(input, output, session) {
     df_pivot() |>
       ggplot(aes(x = timestamp, y = depth, color = site)) +
       geom_line() +
+      geom_text_repel(aes(y = depth, label = sprintf("%.1f", depth)), data = df_latest(), hjust=1) +
       theme_minimal() +
       labs(y = "Depth (ft)", x = NULL, color = "Gage") +
-      scale_color_brewer(palette = "Paired")
+      scale_color_brewer(palette = "Paired") 
   })
   
   output$temp_plot <- renderPlot({
