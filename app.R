@@ -95,7 +95,7 @@ ui <- fluidPage(
     column(12,
            dateRangeInput(
              "date_range",
-             "Select date range:",
+             label = "", #"Select date range:",
              start = Sys.Date() - 30,
              end = Sys.Date(),
              min = as.Date("2025-12-06"),
@@ -106,8 +106,8 @@ ui <- fluidPage(
   
   fluidRow(
     column(12,
-           if (!INTERACTIVE) plotOutput("combined_plot", height = 800)
-           else plotlyOutput("combined_plot", height = 800)
+           if (!INTERACTIVE) plotOutput("combined_plot", height = "90vh")
+           else plotlyOutput("combined_plot", height = "90vh")
     )
   )
 )
@@ -231,14 +231,14 @@ server <- function(input, output, session) {
       site_colors <- RColorBrewer::brewer.pal(n = length(sites), name = "Paired")
       names(site_colors) <- sites
       
-      # ---- Depth plot ----
-      p_depth <- plot_ly()
+      # ---- Depth traces ----
+      p <- plot_ly()
       for (s in sites) {
         df_s <- base_df |> filter(site == s)
         
         # Depth trace
-        p_depth <- add_trace(
-          p_depth,
+        p <- add_trace(
+          p,
           x = df_s$timestamp,
           y = df_s$depth,
           type = "scatter",
@@ -248,34 +248,35 @@ server <- function(input, output, session) {
           line = list(dash = "solid", color = site_colors[s]),
           text = paste(s, "\nDepth", sprintf("%.1f ft", df_s$depth)),
           hoverinfo = "text+x",
-          connectgaps = FALSE
+          connectgaps = FALSE,
+          yaxis = "y"
         )
       }
       
-      # ---- Temperature plot ----
-      p_temp <- plot_ly()
+      # ---- Temperature traces ----
       for (s in sites) {
         df_s <- base_df |> filter(site == s)
         
-        # Water temp trace (solid)
-        p_temp <- add_trace(
-          p_temp,
+        # Water temperature (solid)
+        p <- add_trace(
+          p,
           x = df_s$timestamp,
           y = df_s$water_temperature,
           type = "scatter",
           mode = "lines",
           name = s,
           legendgroup = s,
-          showlegend = FALSE,  # merge with depth legend
+          showlegend = FALSE, # merge with depth legend
           line = list(dash = "solid", color = site_colors[s]),
           text = paste(s, "\nWater Temperature", sprintf("%.1f °F", df_s$water_temperature)),
           hoverinfo = "text+x",
-          connectgaps = FALSE
+          connectgaps = FALSE,
+          yaxis = "y2"
         )
         
-        # Air temp trace (dotted)
-        p_temp <- add_trace(
-          p_temp,
+        # Air temperature (dotted)
+        p <- add_trace(
+          p,
           x = df_s$timestamp,
           y = df_s$air_temperature,
           type = "scatter",
@@ -285,21 +286,47 @@ server <- function(input, output, session) {
           line = list(dash = "dot", color = site_colors[s]),
           text = paste(s, "\nAir Temperature", sprintf("%.1f °F", df_s$air_temperature)),
           hoverinfo = "text+x",
-          connectgaps = FALSE
+          connectgaps = FALSE,
+          yaxis = "y2"
         )
       }
       
-      # ---- Stack plots with shared x-axis ----
-      subplot(p_depth, p_temp, nrows = 2, shareX = TRUE, titleY = TRUE) |>
-        layout(
-          margin = list(b = 80),
-          dragmode = "zoom",
-          xaxis = list(title = "", fixedrange = FALSE),
-          yaxis = list(title = "Depth (ft)", fixedrange = TRUE),
-          yaxis2 = list(title = "Temperature (°F)", fixedrange = TRUE),
-          legend = list(orientation = "h", x = 0.5, xanchor = "center", y = -0.25)
-        )
+      # ---- Layout with dynamic vertical sizing ----
+      p |> layout(
+        dragmode = "zoom",
+        xaxis = list(
+          title = "",
+          domain = c(0, 1),
+          side = "top",
+          showspikes = TRUE
+        ),
+        xaxis2 = list(
+          overlaying = "x",
+          side = "top",
+          showticklabels = TRUE
+        ),
+        yaxis = list(
+          title = "Depth (ft)",
+          domain = c(0.5, 1),
+          fixedrange = TRUE
+        ),
+        yaxis2 = list(
+          title = "Temperature (°F)",
+          domain = c(0, 0.5),
+          fixedrange = TRUE
+        ),
+        legend = list(
+          orientation = "h",
+          x = 0.5,
+          yref = "container",
+          xanchor = "center",
+          y = 0,
+          automargin = TRUE
+        ),
+        margin = list(t = 40, b = 60, l = 60, r = 20)
+      )
     })
+    
     
   }
   
