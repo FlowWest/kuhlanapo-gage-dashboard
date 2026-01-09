@@ -56,7 +56,7 @@ rating_curves <- rating_curves_nested |>
   select(code, rating_curve) |>
   deframe()
 
-rating_curves |> saveRDS(here::here("data-raw", "rating_curves.rds"))
+rating_curves |> saveRDS(here::here("data", "rating_curves.rds"))
   
 rating_curves |>
   lapply(xsmatic::xs_plot_rc) |>

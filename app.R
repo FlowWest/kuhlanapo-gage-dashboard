@@ -244,7 +244,7 @@ ui <- fluidPage(
         label = "",
         choices = c(
           "Depth"        = "depth",
-          "Elevation"   = "wse_ft_navd88",
+          "Water Surface"   = "wse_ft_navd88",
           "Flow"        = "flow_cfs"
         ),
         selected = "depth",
@@ -328,7 +328,7 @@ server <- function(input, output, session) {
   })
   
   # load flow rating curve saved by rating_curves.R
-  rating_curves <- readRDS(here::here("data-raw", "rating_curves.rds"))
+  rating_curves <- readRDS(here::here("data", "rating_curves.rds"))
   
   df_pivot <- reactive({
     df <- ts_data() |>
@@ -449,8 +449,49 @@ server <- function(input, output, session) {
       tm <- top_metric()
       ycol <- tm$col
       
+      min_lake <- 1318.257 + 3.4 # zero rumsey to NAVD88
+      max_lake <- min_lake + 7.56
+      min_y <- if (input$top_metric == "wse_ft_navd88") min_lake else 0
+      max_y <- max(base_df[[ycol]], na.rm=T) 
+      max_y <- max_y + (max_y - min_y) * 0.05
+      
       p <- plot_ly()
       
+      if (input$top_metric == "wse_ft_navd88" & "lake_level" %in% names(base_df)) {
+        df_ll_plot <- base_df |>
+          select(timestamp, lake_level) |>
+          distinct()  # collapse duplicates so only one trace
+        
+        p <- add_trace(
+          p,
+          x = df_ll_plot$timestamp,
+          y = df_ll_plot$lake_level,
+          type = "scatter",
+          mode = "none",         # no line markers
+          fill = "tozeroy",      # fill area down to y=0
+          fillcolor = "rgba(0,0,255,0.2)",  # semi-transparent blue
+          name = "Lake Level (USGS)",
+          legendgroup = "lake_level",
+          text = paste0("Lake Level (ft NAVD88): ", sprintf("%.2f", df_ll_plot$lake_level)),
+          hoverinfo = "text",
+          yaxis = "y"
+        ) 
+        
+        p <- add_trace(
+            p, 
+            x = c(min(df_ll_plot$timestamp), max(df_ll_plot$timestamp)),   # line from start to end
+            y = c(max_lake, max_lake),
+            type = "scatter",
+            mode = "lines",
+            line = list(dash = "dash", color = "rgba(0,0,255,0.2)"),
+            hoverinfo = "text",
+            name = "Full Lake",
+            legendgroup = "lake_level",
+            text = "Full Lake",
+            showlegend = TRUE
+          )
+        
+      }
       for (s in sites) {
         df_s <- base_df |> filter(site == s)
         
@@ -512,27 +553,6 @@ server <- function(input, output, session) {
         )
       }
       
-      if (input$top_metric == "wse_ft_navd88" & "lake_level" %in% names(base_df)) {
-        df_ll_plot <- base_df |>
-          select(timestamp, lake_level) |>
-          distinct()  # only one row per timestamp
-        
-        p <- add_trace(
-          p,
-          x = df_ll_plot$timestamp,
-          y = df_ll_plot$lake_level,
-          type = "scatter",
-          mode = "lines",
-          name = "Lake Level (USGS)",
-          legendgroup = "lake_level",
-          line = list(dash = "solid", color = "black", alpha=0.5),
-          text = paste0("Lake Level (ft NAVD88): ", sprintf("%.2f", df_ll_plot$lake_level)),
-          hoverinfo = "text+x",
-          connectgaps = FALSE,
-          yaxis = "y"
-        )
-      }
-      
       # ---- Layout with dynamic vertical sizing ----
       p |> layout(
         dragmode = "zoom",
@@ -550,7 +570,8 @@ server <- function(input, output, session) {
         yaxis = list(
           title = tm$label,
           domain = c(0.5, 1),
-          fixedrange = TRUE
+          fixedrange = TRUE,
+          range = c(min_y, max_y)
         ),
         yaxis2 = list(
           title = "Temperature (°F)",
