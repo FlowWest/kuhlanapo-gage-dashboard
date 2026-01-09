@@ -20,18 +20,22 @@ INTERACTIVE <- TRUE
 CACHE_TTL <- 24 * 60 * 60
 FORCE_REFRESH_TIME_PT <- hm("08:00")
 
-cache_dir <- file.path(getwd(), ".cache", "hydrovu")
-dir.create(cache_dir, recursive = TRUE, showWarnings = FALSE)
+cache_dir_hydrovu <- file.path(getwd(), ".cache", "hydrovu")
+dir.create(cache_dir_hydrovu, recursive = TRUE, showWarnings = FALSE)
+cache_data_file_hydrovu <- file.path(cache_dir_hydrovu, "gage_data.rds")
+cache_lock_file_hydrovu <- file.path(cache_dir_hydrovu, "refresh.lock")
+rds_url_hydrovu <- "https://github.com/flowwest/kuhlanapo-gage-dashboard/raw/main/data/gage_data.rds"
 
-cache_data_file <- file.path(cache_dir, "gage_data.rds")
-cache_lock_file <- file.path(cache_dir, "refresh.lock")
-
-rds_url <- "https://github.com/flowwest/kuhlanapo-gage-dashboard/raw/main/data/gage_data.rds"
+usgs_cache_dir <- file.path(getwd(), ".cache", "usgs")
+dir.create(usgs_cache_dir, recursive = TRUE, showWarnings = FALSE)
+cache_data_file_lakelevel <- file.path(usgs_cache_dir, "usgs_lake_level_11450000.rds")
+cache_lock_file_lakelevel <- file.path(usgs_cache_dir, "refresh.lock")
+rds_url_lakelevel <- "https://github.com/flowwest/kuhlanapo-gage-dashboard/raw/flow-rating-curves/data/usgs_lake_level_11450000.rds"
 
 message(
   sprintf(
     "[cache:init] dir=%s | ttl=%s sec (%.1f hrs) | forced_refresh=07:30 PT",
-    normalizePath(cache_dir, winslash = "/", mustWork = FALSE),
+    normalizePath(cache_dir_hydrovu, winslash = "/", mustWork = FALSE),
     CACHE_TTL,
     CACHE_TTL / 3600
   )
@@ -40,7 +44,7 @@ message(
 message(
   sprintf(
     "[cache:init] data_file=%s",
-    normalizePath(cache_data_file, winslash = "/", mustWork = FALSE)
+    normalizePath(cache_data_file_hydrovu, winslash = "/", mustWork = FALSE)
   )
 )
 
@@ -59,8 +63,8 @@ gages <- tribble(
 sites <- tribble(
   ~code, ~twg_elev,
   "MC-01", 1327.832,        
-  "MC-01", 1329.63,        
-  "MC-01", 1331.55)
+  "MC-02", 1329.63,        
+  "MC-03", 1331.55)
 
 empty_ts_schema <- tibble(
   code = character(),
@@ -76,7 +80,7 @@ empty_ts_schema <- tibble(
 
 ## HELPERS =====================================================================
 
-read_cached_data <- function() {
+read_cached_data <- function(cache_data_file) {
   if (!file.exists(cache_data_file)) {
     message("[cache:read] no cache file on disk")
     return(NULL)
@@ -93,7 +97,7 @@ read_cached_data <- function() {
   )
 }
 
-write_cache <- function(df) {
+write_cache <- function(df, cache_data_file) {
   tmp <- paste0(cache_data_file, ".tmp")
   
   message(
@@ -110,7 +114,7 @@ write_cache <- function(df) {
   message("[cache:write] write complete")
 }
 
-cache_is_stale <- function() {
+cache_is_stale <- function(cache_data_file) {
   
   if (!file.exists(cache_data_file)) {
     message("[cache:check] cache file missing → stale=TRUE")
@@ -152,7 +156,7 @@ cache_is_stale <- function() {
   ttl_stale || force_stale
 }
 
-refresh_cache_async <- function() {
+refresh_cache_async <- function(cache_lock_file, rds_url) {
   
   if (file.exists(cache_lock_file)) {
     message("[cache:refresh] skipped (lock exists)")
@@ -183,7 +187,7 @@ refresh_cache_async <- function() {
       download.file(rds_url, tmp_file, mode = "wb", quiet = TRUE)
       
       new_data <- readRDS(tmp_file)
-      old_data <- read_cached_data()
+      old_data <- read_cached_data(cache_data_file_hydrovu)
       
       message(
         sprintf(
@@ -207,7 +211,7 @@ refresh_cache_async <- function() {
         )
       )
       
-      write_cache(combined)
+      write_cache(combined, cache_data_file_hydrovu)
       
       message("[cache:refresh] refresh SUCCESS")
       
@@ -223,9 +227,8 @@ refresh_cache_async <- function() {
 
 ui <- fluidPage(
   
-  fluidRow(
-    column(
-      12,
+  flowLayout(
+
       dateRangeInput(
         "date_range",
         label = "",
@@ -233,21 +236,20 @@ ui <- fluidPage(
         end = Sys.Date(),
         min = as.Date("2025-12-06"),
         max = Sys.Date()
-      )
+
     ),
-    column(
-      12,
-      radioButtons(
+
+      shinyWidgets::radioGroupButtons(
         "top_metric",
         label = "",
         choices = c(
-          "Depth (ft)"        = "depth",
-          "Water Surface Elevation (ft NAVD88)" = "wse_ft_navd88",
-          "Flow (cfs)"        = "flow_cfs"
+          "Depth"        = "depth",
+          "Elevation"   = "wse_ft_navd88",
+          "Flow"        = "flow_cfs"
         ),
         selected = "depth",
-        inline = TRUE
-      )
+        size = "sm"
+
     )
   ),
   
@@ -289,16 +291,35 @@ server <- function(input, output, session) {
   
   ts_data <- reactive({
     
-    if (!file.exists(cache_data_file)) {
+    if (!file.exists(cache_data_file_hydrovu)) {
       message("[cache:bootstrap] no cache → downloading initial copy")
-      download.file(rds_url, cache_data_file, mode = "wb", quiet = TRUE)
+      download.file(rds_url_hydrovu, cache_data_file_hydrovu, mode = "wb", quiet = TRUE)
     }
     
-    df <- read_cached_data()
+    df <- read_cached_data(cache_data_file_hydrovu)
     
-    if (cache_is_stale()) {
+    if (cache_is_stale(cache_data_file_hydrovu)) {
       message("[cache:decision] cache is stale → triggering async refresh")
-      refresh_cache_async()
+      refresh_cache_async(cache_lock_file_hydrovu, rds_url_hydrovu)
+    } else {
+      message("[cache:decision] cache is fresh → no refresh")
+    }
+    
+    df
+  })
+
+  ll_data <- reactive({
+    
+    if (!file.exists(cache_data_file_lakelevel)) {
+      message("[cache:bootstrap] no cache → downloading initial copy")
+      download.file(rds_url_lakelevel, cache_data_file_lakelevel, mode = "wb", quiet = TRUE)
+    }
+    
+    df <- read_cached_data(cache_data_file_lakelevel)
+    
+    if (cache_is_stale(cache_data_file_lakelevel)) {
+      message("[cache:decision] cache is stale → triggering async refresh")
+      refresh_cache_async(cache_lock_file_lakelevel, rds_url_lakelevel)
     } else {
       message("[cache:decision] cache is fresh → no refresh")
     }
@@ -310,7 +331,7 @@ server <- function(input, output, session) {
   rating_curves <- readRDS(here::here("data-raw", "rating_curves.rds"))
   
   df_pivot <- reactive({
-    ts_data() |>
+    df <- ts_data() |>
       filter(parm_name %in% c("Depth", "Temperature")) |>
       mutate(parm_name_modified = case_when(
         parm_name == "Temperature" & type == "vulink" ~ "Air Temperature",
@@ -329,14 +350,15 @@ server <- function(input, output, session) {
       mutate(timestamp = with_tz(timestamp, "America/Los_Angeles")) |>
       # apply flow rating curve:
       nest(.by = c(code, site)) |>
+      inner_join(sites, by=join_by(code)) |>
       inner_join(enframe(rating_curves, 
                          name = "code", 
                          value = "rating_curve"),
                  by = join_by(code)) |>
-      mutate(result = map2(data, rating_curve,
-                           \(d, rc) {
+      mutate(result = pmap(list(data, rating_curve, twg_elev),
+                           \(d, rc, twe) {
                              with(rc, d |>
-                                    mutate(wse_ft_navd88 = depth + first(thalweg_elevation),
+                                    mutate(wse_ft_navd88 = if_else(depth > 0, depth + twe, NA),
                                            flow_cfs = approx(x = max_depth,
                                                                       y = discharge,
                                                                       xout = depth,
@@ -344,6 +366,17 @@ server <- function(input, output, session) {
       select(code, site, result) |>
       unnest(result) |>
       mutate(flow_cfs = if_else(depth == 0, 0, flow_cfs))
+    
+    # join lake level
+    df_ll <- ll_data() |>
+      select(timestamp, lake_level = value)
+    
+    df <- df |>
+      left_join(df_ll, by = c("timestamp")) |>
+      # don't show the flow prediction if lake level exceeds the thalweg
+      mutate(flow_cfs = if_else(lake_level >= (wse_ft_navd88 - depth), NA, flow_cfs))
+    
+    df
     
   })
   
@@ -476,6 +509,27 @@ server <- function(input, output, session) {
           hoverinfo = "text+x",
           connectgaps = FALSE,
           yaxis = "y2"
+        )
+      }
+      
+      if (input$top_metric == "wse_ft_navd88" & "lake_level" %in% names(base_df)) {
+        df_ll_plot <- base_df |>
+          select(timestamp, lake_level) |>
+          distinct()  # only one row per timestamp
+        
+        p <- add_trace(
+          p,
+          x = df_ll_plot$timestamp,
+          y = df_ll_plot$lake_level,
+          type = "scatter",
+          mode = "lines",
+          name = "Lake Level (USGS)",
+          legendgroup = "lake_level",
+          line = list(dash = "solid", color = "black", alpha=0.5),
+          text = paste0("Lake Level (ft NAVD88): ", sprintf("%.2f", df_ll_plot$lake_level)),
+          hoverinfo = "text+x",
+          connectgaps = FALSE,
+          yaxis = "y"
         )
       }
       
