@@ -56,6 +56,12 @@ gages <- tribble(
   "MC-02","Secondary Channel",   "2025SGMC02_VL", "vulink"
 ) |> mutate(across(everything(), as.character))
 
+sites <- tribble(
+  ~code, ~twg_elev,
+  "MC-01", 1327.832,        
+  "MC-01", 1329.63,        
+  "MC-01", 1331.55)
+
 empty_ts_schema <- tibble(
   code = character(),
   site = character(),
@@ -228,6 +234,20 @@ ui <- fluidPage(
         min = as.Date("2025-12-06"),
         max = Sys.Date()
       )
+    ),
+    column(
+      12,
+      radioButtons(
+        "top_metric",
+        label = "",
+        choices = c(
+          "Depth (ft)"        = "depth",
+          "Water Surface Elevation (ft NAVD88)" = "wse_ft_navd88",
+          "Flow (cfs)"        = "flow_cfs"
+        ),
+        selected = "depth",
+        inline = TRUE
+      )
     )
   ),
   
@@ -245,6 +265,27 @@ ui <- fluidPage(
 ## SERVER ======================================================================
 
 server <- function(input, output, session) {
+  
+  top_metric <- reactive({
+    switch(
+      input$top_metric,
+      depth = list(
+        col   = "depth",
+        label = "Depth (ft)",
+        fmt   = function(x) sprintf("%.1f", x)
+      ),
+      wse_ft_navd88 = list(
+        col   = "wse_ft_navd88",
+        label = "Water Surface Elevation (ft NAVD88)",
+        fmt   = function(x) sprintf("%.2f", x)
+      ),
+      flow_cfs = list(
+        col   = "flow_cfs",
+        label = "Flow (cfs)",
+        fmt   = function(x) scales::comma(round(x))
+      )
+    )
+  })
   
   ts_data <- reactive({
     
@@ -265,6 +306,9 @@ server <- function(input, output, session) {
     df
   })
   
+  # load flow rating curve saved by rating_curves.R
+  rating_curves <- readRDS(here::here("data-raw", "rating_curves.rds"))
+  
   df_pivot <- reactive({
     ts_data() |>
       filter(parm_name %in% c("Depth", "Temperature")) |>
@@ -282,7 +326,25 @@ server <- function(input, output, session) {
       clean_names() |>
       mutate(water_temperature = if_else(depth > 0, water_temperature, NA)) |>
       mutate(site = factor(site, levels = unique(gages$site))) |>
-      mutate(timestamp = with_tz(timestamp, "America/Los_Angeles"))
+      mutate(timestamp = with_tz(timestamp, "America/Los_Angeles")) |>
+      # apply flow rating curve:
+      nest(.by = c(code, site)) |>
+      inner_join(enframe(rating_curves, 
+                         name = "code", 
+                         value = "rating_curve"),
+                 by = join_by(code)) |>
+      mutate(result = map2(data, rating_curve,
+                           \(d, rc) {
+                             with(rc, d |>
+                                    mutate(wse_ft_navd88 = depth + first(thalweg_elevation),
+                                           flow_cfs = approx(x = max_depth,
+                                                                      y = discharge,
+                                                                      xout = depth,
+                                                                      rule = 1:1)$y))})) |>
+      select(code, site, result) |>
+      unnest(result) |>
+      mutate(flow_cfs = if_else(depth == 0, 0, flow_cfs))
+    
   })
   
   filtered_df <- reactive({
@@ -315,47 +377,28 @@ server <- function(input, output, session) {
       site_colors <- RColorBrewer::brewer.pal(n = length(sites), name = "Paired")
       names(site_colors) <- sites
       
-      # ---- Clean depth data ----
-      base_df_depth <- base_df |> filter(!is.na(depth))
+      tm <- top_metric()
+      ycol <- sym(tm$col)
       
-      # Depth plot
-      p_depth <- ggplot(base_df_depth, aes(x = timestamp, y = depth, color = site)) +
+      base_df_top <- base_df |> filter(!is.na(!!ycol))
+      
+      p_top <- ggplot(base_df_top, aes(x = timestamp, y = !!ycol, color = site)) +
         geom_line() +
         geom_text_repel(
-          data = label_df |> filter(!is.na(depth)),
-          aes(y = depth, label = sprintf("%.1f", depth)),
+          data = label_df |> filter(!is.na(!!ycol)),
+          aes(
+            y = !!ycol,
+            label = tm$fmt(!!ycol)
+          ),
           hjust = 1
         ) +
         scale_color_manual(values = site_colors, na.value = "grey50") +
         theme_minimal() +
-        labs(y = "Depth (ft)", x = NULL, color = "Gage") +
-        theme(legend.position = "bottom", legend.box = "horizontal")
-      
-      # ---- Clean temperature data ----
-      temp_long <- base_df |>
-        pivot_longer(c(air_temperature, water_temperature),
-                     names_to = "parameter",
-                     values_to = "temperature") |>
-        mutate(
-          parameter = case_when(
-            parameter == "air_temperature"   ~ "Air Temperature",
-            parameter == "water_temperature" ~ "Water Temperature"
-          )
-        ) |> 
-        filter(!is.na(temperature))
-      
-      # Temperature plot
-      p_temp <- ggplot(temp_long, aes(x = timestamp, y = temperature, color = site)) +
-        geom_line(aes(linetype = parameter)) +
-        scale_color_manual(values = site_colors, na.value = "grey50") +
-        scale_linetype_manual(values = c("Water Temperature" = "solid",
-                                         "Air Temperature"   = "dashed")) +
-        theme_minimal() +
-        labs(y = "Temperature (°F)", x = NULL, color = "Gage", linetype = "Parameter") +
+        labs(y = tm$label, x = NULL, color = "Gage") +
         theme(legend.position = "bottom", legend.box = "horizontal")
       
       # ---- Combine with patchwork ----
-      p_depth / p_temp + plot_layout(axes = "collect_x")
+      p_top / p_temp + plot_layout(axes = "collect_x")
     })
     
   } else {
@@ -370,21 +413,28 @@ server <- function(input, output, session) {
       names(site_colors) <- sites
       
       # ---- Depth traces ----
+      tm <- top_metric()
+      ycol <- tm$col
+      
       p <- plot_ly()
+      
       for (s in sites) {
         df_s <- base_df |> filter(site == s)
         
-        # Depth trace
         p <- add_trace(
           p,
           x = df_s$timestamp,
-          y = df_s$depth,
+          y = df_s[[ycol]],
           type = "scatter",
           mode = "lines",
           name = s,
           legendgroup = s,
           line = list(dash = "solid", color = site_colors[s]),
-          text = paste(s, "\nDepth", sprintf("%.1f ft", df_s$depth)),
+          text = paste(
+            s,
+            tm$label,
+            tm$fmt(df_s[[ycol]])
+          ),
           hoverinfo = "text+x",
           connectgaps = FALSE,
           yaxis = "y"
@@ -444,7 +494,7 @@ server <- function(input, output, session) {
           showticklabels = TRUE
         ),
         yaxis = list(
-          title = "Depth (ft)",
+          title = tm$label,
           domain = c(0.5, 1),
           fixedrange = TRUE
         ),
