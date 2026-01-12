@@ -345,6 +345,9 @@ server <- function(input, output, session) {
       select(code, site, timestamp, parm_name_modified, value) |>
       pivot_wider(names_from = parm_name_modified, values_from = value) |>
       clean_names() |>
+      # if troll is freezing, depth reading is invalid
+      mutate(depth = if_else(water_temperature > 32, depth, NA)) |>
+      # don't show troll temp if there is no water
       mutate(water_temperature = if_else(depth > 0, water_temperature, NA)) |>
       mutate(site = factor(site, levels = unique(gages$site))) |>
       mutate(timestamp = with_tz(timestamp, "America/Los_Angeles")) |>
