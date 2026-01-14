@@ -67,7 +67,7 @@ if (!is.null(existing_data) && "datetime" %in% names(existing_data)) {
 end_ts <- with_tz(Sys.time(), DATA_TZ)
 
 start_ts <- if (!is.null(existing_data) && nrow(existing_data) > 0) {
-  candidate <- max(existing_data$datetime, na.rm = TRUE) - days(OVERLAP_DAYS)
+  candidate <- max(existing_data$timestamp, na.rm = TRUE) - days(OVERLAP_DAYS)
   max(candidate, MIN_START_DATE)
 } else {
   MIN_START_DATE
