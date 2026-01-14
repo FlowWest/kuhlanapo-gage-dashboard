@@ -7,9 +7,6 @@ on:
     - cron: "30 15 * * *"
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
   refresh:
     runs-on: ubuntu-latest
@@ -35,12 +32,10 @@ jobs:
             lubridate
             stringr
 
-      - name: Install inldata from GitHub
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install inldata from USGS
         run: |
           Rscript -e 'install.packages("remotes")'
-          Rscript -e 'remotes::install_github("USGS-R/inldata", upgrade = "never")'
+          Rscript -e 'remotes::install_git("https://code.usgs.gov/inl/inldata.git", upgrade = "never")'
 
       - name: Fetch USGS lake level data
         run: |
