@@ -32,7 +32,7 @@ jobs:
             lubridate
             stringr
 
-      - name: Install inldata from GitHub
+      - name: Install inldata from USGS
         run: |
           Rscript -e 'install.packages("remotes")'
           Rscript -e 'remotes::install_git("https://code.usgs.gov/inl/inldata.git", upgrade = "never")'
