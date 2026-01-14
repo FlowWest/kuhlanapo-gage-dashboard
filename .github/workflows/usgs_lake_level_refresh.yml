@@ -31,6 +31,7 @@ jobs:
             dplyr
             lubridate
             stringr
+            terra
 
       - name: Install inldata from USGS
         run: |
