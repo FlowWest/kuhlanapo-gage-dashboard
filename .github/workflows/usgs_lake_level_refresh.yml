@@ -31,7 +31,11 @@ jobs:
             dplyr
             lubridate
             stringr
-            inldata
+
+      - name: Install inldata from GitHub
+        run: |
+          Rscript -e 'install.packages("remotes")'
+          Rscript -e 'remotes::install_github("USGS-R/inldata")'
 
       - name: Fetch USGS lake level data
         run: |
