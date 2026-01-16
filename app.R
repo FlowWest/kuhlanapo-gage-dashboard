@@ -461,7 +461,7 @@ server <- function(input, output, session) {
           name = "Lake Level (USGS)",
           legendgroup = "lake_level",
           text = paste0("Lake Level (ft NAVD88): ", sprintf("%.2f", df_ll_plot$lake_level)),
-          hoverinfo = "text",
+          hoverinfo = "text+x",
           yaxis = "y"
         ) 
         

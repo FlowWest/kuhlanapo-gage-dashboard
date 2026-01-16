@@ -38,8 +38,12 @@ build_usgs_url <- function(start_dt, end_dt) {
     query = list(
       sites       = SITE_ID,
       agencyCd    = "USGS",
-      startDT     = format(start_dt, "%Y-%m-%dT%H:%M:%OS%z"),
-      endDT       = format(end_dt,   "%Y-%m-%dT%H:%M:%OS%z"),
+      # startDT     = format(with_tz(start_dt, "UTC"), "%Y-%m-%dT%H:%M:%OSZ"),
+      # endDT       = format(with_tz(end_dt,   "UTC"), "%Y-%m-%dT%H:%M:%OSZ"),
+      startDT     = format(start_dt, "%Y-%m-%dT%H:%M:%OS%Z"),
+      endDT       = format(end_dt,   "%Y-%m-%dT%H:%M:%OS%Z"),
+      # startDT     = format(force_tz(start_dt, "UTC"), "%Y-%m-%dT%H:%M:%OSZ"),
+      # endDT       = format(force_tz(end_dt,   "UTC"), "%Y-%m-%dT%H:%M:%OSZ"),
       parameterCd = PARAMETER_CD,
       format      = "rdb"
     )
@@ -65,6 +69,7 @@ if (!is.null(existing_data) && "datetime" %in% names(existing_data)) {
 ## DETERMINE FETCH WINDOW ======================================================
 
 end_ts <- with_tz(Sys.time(), DATA_TZ)
+# end_ts <- as.POSIXct(as.Date(end_ts, tz = DATA_TZ) + 1)
 
 start_ts <- if (!is.null(existing_data) && nrow(existing_data) > 0) {
   candidate <- max(existing_data$timestamp, na.rm = TRUE) - days(OVERLAP_DAYS)
