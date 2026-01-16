@@ -7,6 +7,8 @@ library(tidyr)
 library(purrr)
 library(tibble)
 
+source(here::here("global.R"))
+
 ## CONFIG =====================================================================
 
 CLIENT_ID     <- Sys.getenv("HYDROVU_CLIENT_ID")
@@ -20,16 +22,6 @@ DATA_FILE <- "data/gage_data.rds"
 
 # Safety overlap when appending (prevents boundary misses)
 OVERLAP_DAYS <- 2
-
-gages <- tribble(
-  ~code,   ~site,                 ~name,           ~type,
-  "MC-01","Lower Manning Creek", "2025SGMC01",    "troll",
-  "MC-01","Lower Manning Creek", "2025SGMC01_VL", "vulink",
-  "MC-03","Upper Manning Creek", "2025SGMC03",    "troll",
-  "MC-03","Upper Manning Creek", "2025SGMC03_VL", "vulink",
-  "MC-02","Secondary Channel",   "2025SGMC02",    "troll",
-  "MC-02","Secondary Channel",   "2025SGMC02_VL", "vulink"
-) |> mutate(across(everything(), as.character))
 
 ## AUTH =======================================================================
 

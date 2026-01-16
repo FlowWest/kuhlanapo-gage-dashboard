@@ -5,9 +5,9 @@ account: flowwest
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 16399452
-bundleId: 11424019
+bundleId: 11451113
 url: https://flowwest.shinyapps.io/kuhlanapo-gage-dashboard-dev/
 version: 1
 asMultiple: FALSE
 asStatic: FALSE
-ignoredFiles: .cache/hydrovu/gage_data.rds|.cache/usgs/usgs_lake_level_11450000.rds|.github/workflows/hydrovu_refresh.yml|.github/workflows/usgs_lake_level_refresh.yml|.RData|app - Copy.R|app_nocache_backup.R|data/gage_data.rds|data/usgs_lake_level_11450000.rds|scripts/fetch_hydrovu.R|scripts/fetch_usgs_lake_level.R|data-raw
+ignoredFiles: .cache/hydrovu/gage_data.rds|.cache/usgs/usgs_lake_level_11450000.rds|.github/workflows/hydrovu_refresh.yml|.github/workflows/usgs_lake_level_refresh.yml|.RData|app_nocache_backup.R|data/gage_data.rds|data/usgs_lake_level_11450000.rds|scripts/fetch_hydrovu.R|scripts/fetch_usgs_lake_level.R|data-raw

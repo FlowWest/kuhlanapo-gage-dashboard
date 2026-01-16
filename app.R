@@ -12,6 +12,8 @@ library(plotly)
 library(patchwork)
 library(future)
 
+source(here::here("global.R"))
+
 ## CONFIG ======================================================================
 
 INTERACTIVE <- TRUE
@@ -30,7 +32,7 @@ usgs_cache_dir <- file.path(getwd(), ".cache", "usgs")
 dir.create(usgs_cache_dir, recursive = TRUE, showWarnings = FALSE)
 cache_data_file_lakelevel <- file.path(usgs_cache_dir, "usgs_lake_level_11450000.rds")
 cache_lock_file_lakelevel <- file.path(usgs_cache_dir, "refresh.lock")
-rds_url_lakelevel <- "https://github.com/flowwest/kuhlanapo-gage-dashboard/raw/flow-rating-curves/data/usgs_lake_level_11450000.rds"
+rds_url_lakelevel <- "https://github.com/flowwest/kuhlanapo-gage-dashboard/raw/main/data/usgs_lake_level_11450000.rds"
 
 message(
   sprintf(
@@ -49,22 +51,6 @@ message(
 )
 
 ## DATA DEFINITIONS =============================================================
-
-gages <- tribble(
-  ~code,   ~site,                 ~name,           ~type,
-  "MC-01","Lower Manning Creek", "2025SGMC01",    "troll",
-  "MC-01","Lower Manning Creek", "2025SGMC01_VL", "vulink",
-  "MC-03","Upper Manning Creek", "2025SGMC03",    "troll",
-  "MC-03","Upper Manning Creek", "2025SGMC03_VL", "vulink",
-  "MC-02","Secondary Channel",   "2025SGMC02",    "troll",
-  "MC-02","Secondary Channel",   "2025SGMC02_VL", "vulink"
-) |> mutate(across(everything(), as.character))
-
-sites <- tribble(
-  ~code, ~twg_elev,
-  "MC-01", 1327.832,        
-  "MC-02", 1329.63,        
-  "MC-03", 1331.55)
 
 empty_ts_schema <- tibble(
   code = character(),
@@ -360,12 +346,11 @@ server <- function(input, output, session) {
                  by = join_by(code)) |>
       mutate(result = pmap(list(data, rating_curve, twg_elev),
                            \(d, rc, twe) {
-                             with(rc, d |>
-                                    mutate(wse_ft_navd88 = if_else(depth > 0, depth + twe, NA),
-                                           flow_cfs = approx(x = max_depth,
-                                                                      y = discharge,
-                                                                      xout = depth,
-                                                                      rule = 1:1)$y))})) |>
+                             d |> mutate(wse_ft_navd88 = if_else(depth > 0, depth + twe, NA),
+                                         flow_cfs = approx(x = rc$max_depth,
+                                                           y = rc$flow_cfs,
+                                                           xout = depth,
+                                                           rule = 2:2)$y)})) |>
       select(code, site, result) |>
       unnest(result) |>
       mutate(flow_cfs = if_else(depth == 0, 0, flow_cfs))
