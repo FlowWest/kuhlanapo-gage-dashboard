@@ -281,7 +281,11 @@ server <- function(input, output, session) {
       pivot_wider(names_from = parm_name_modified, values_from = value) |>
       clean_names() |>
       # if troll is freezing, depth reading is invalid
-      mutate(depth = if_else(water_temperature > 32, depth, NA)) |>
+      group_by(code, site) |>
+      mutate(depth = if_else((water_temperature > 32) & 
+                               coalesce(lag(water_temperature) > 32, TRUE), 
+                             depth, NA)) |>
+      ungroup() |>
       # don't show troll temp if there is no water
       mutate(water_temperature = if_else(depth > 0, water_temperature, NA)) |>
       mutate(site = factor(site, levels = unique(gages$site))) |>
