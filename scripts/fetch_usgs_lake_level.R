@@ -24,12 +24,15 @@ OVERLAP_DAYS <- 2
 ## URL BUILDER ================================================================
 
 # install.packages("inldata", dependencies = TRUE)
-read_usgs_rdb <- function(file) {
+read_usgs_rdb <- function(file, tz = "UTC") {
   raw_df <- inldata::read_rdb(file)
   col_types <- attributes(raw_df)$column_definitions |> str_sub(-1,-1) 
   raw_df |>
     mutate(across(which(col_types == "n"), as.numeric)) |>
-    mutate(across(which(col_types == "d"), as.POSIXct))
+    mutate(across(
+      which(col_types == "d"),
+      \(x) force_tz(as.POSIXct(x), tz)
+    ))
 }
 
 build_usgs_url <- function(start_dt, end_dt) {
@@ -38,12 +41,8 @@ build_usgs_url <- function(start_dt, end_dt) {
     query = list(
       sites       = SITE_ID,
       agencyCd    = "USGS",
-      # startDT     = format(with_tz(start_dt, "UTC"), "%Y-%m-%dT%H:%M:%OSZ"),
-      # endDT       = format(with_tz(end_dt,   "UTC"), "%Y-%m-%dT%H:%M:%OSZ"),
-      startDT     = format(start_dt, "%Y-%m-%dT%H:%M:%OS%Z"),
-      endDT       = format(end_dt,   "%Y-%m-%dT%H:%M:%OS%Z"),
-      # startDT     = format(force_tz(start_dt, "UTC"), "%Y-%m-%dT%H:%M:%OSZ"),
-      # endDT       = format(force_tz(end_dt,   "UTC"), "%Y-%m-%dT%H:%M:%OSZ"),
+      startDT     = format(start_dt, "%Y-%m-%dT%H:%M:%OS%z"),
+      endDT       = format(end_dt,   "%Y-%m-%dT%H:%M:%OS%z"),
       parameterCd = PARAMETER_CD,
       format      = "rdb"
     )
@@ -69,7 +68,6 @@ if (!is.null(existing_data) && "datetime" %in% names(existing_data)) {
 ## DETERMINE FETCH WINDOW ======================================================
 
 end_ts <- with_tz(Sys.time(), DATA_TZ)
-# end_ts <- as.POSIXct(as.Date(end_ts, tz = DATA_TZ) + 1)
 
 start_ts <- if (!is.null(existing_data) && nrow(existing_data) > 0) {
   candidate <- max(existing_data$timestamp, na.rm = TRUE) - days(OVERLAP_DAYS)
@@ -88,7 +86,7 @@ tmp <- tempfile(fileext = ".rdb")
 res <- GET(url, write_disk(tmp, overwrite = TRUE), timeout(60))
 stop_for_status(res)
 
-new_data <- read_usgs_rdb(tmp)
+new_data <- read_usgs_rdb(tmp, tz = DATA_TZ)
 unlink(tmp)
 
 if (nrow(new_data) == 0) {
