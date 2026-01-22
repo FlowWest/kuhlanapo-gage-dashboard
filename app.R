@@ -377,7 +377,9 @@ server <- function(input, output, session) {
       names(site_colors) <- sites
       
       # ---- Depth traces ----
-      p <- plot_ly()
+      p <- plot_ly() |>
+        config(displayModeBar = TRUE)
+      
       for (s in sites) {
         df_s <- base_df |> filter(site == s)
         
