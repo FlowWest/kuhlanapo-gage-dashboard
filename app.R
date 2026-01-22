@@ -448,7 +448,8 @@ server <- function(input, output, session) {
       max_y <- max(base_df[[ycol]], na.rm=T) 
       max_y <- max_y + (max_y - min_y) * 0.05
       
-      p <- plot_ly()
+      p <- plot_ly() |>
+        config(displayModeBar = TRUE)
       
       if (input$top_metric == "wse_ft_navd88" & "lake_level" %in% names(base_df)) {
         df_ll_plot <- base_df |>
@@ -485,6 +486,7 @@ server <- function(input, output, session) {
           )
         
       }
+
       for (s in sites) {
         df_s <- base_df |> filter(site == s)
         

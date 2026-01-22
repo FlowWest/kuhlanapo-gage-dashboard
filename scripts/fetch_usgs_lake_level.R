@@ -13,7 +13,7 @@ BASE_URL     <- "https://nwis.waterservices.usgs.gov/nwis/iv/"
 DATA_TZ <- "America/Los_Angeles"
 
 MIN_START_DATE <- as.POSIXct(
-  "2025-12-09 00:00:00",
+  "2025-12-05 00:00:00",
   tz = DATA_TZ
 )
 
