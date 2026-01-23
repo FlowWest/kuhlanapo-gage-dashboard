@@ -1,8 +1,8 @@
 sites <- tribble(
   ~code,  ~site, ~site_label, ~twg_elev,
-  "MC-01", "Lower Manning Creek", "Manning Creek West Branch", 1327.83, # lower
-  "MC-03", "Upper Manning Creek", "Manning Creek Above Bifurcation",  1329.63, # upper
-  "MC-02", "Secondary Channel", "Manning Creek Secondary Channel",  1331.55, # secondary
+  "MC-01", "Lower Manning Creek", "Lower West Branch",          1327.83, # lower
+  "MC-03", "Upper Manning Creek", "Mainstem Above Bifurcation", 1329.63, # upper
+  "MC-02", "Secondary Channel",   "Secondary Channel",          1331.55, # secondary
 )
 
 gages <- tribble(
