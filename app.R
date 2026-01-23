@@ -339,11 +339,12 @@ server <- function(input, output, session) {
       ungroup() |>
       # don't show troll temp if there is no water
       mutate(water_temperature = if_else(depth > 0, water_temperature, NA)) |>
-      mutate(site = factor(site, levels = unique(gages$site))) |>
+      mutate(site = factor(site, levels = sites$site, labels = sites$site_label)) |>
       mutate(timestamp = with_tz(timestamp, "America/Los_Angeles")) |>
       # apply flow rating curve:
       nest(.by = c(code, site)) |>
-      inner_join(sites, by=join_by(code)) |>
+      inner_join(sites |> select(code, twg_elev), by=join_by(code)) |>
+      glimpse() |>
       inner_join(enframe(rating_curves, 
                          name = "code", 
                          value = "rating_curve"),
@@ -398,9 +399,8 @@ server <- function(input, output, session) {
       label_df <- df_latest()
       req(nrow(base_df) > 0, nrow(label_df) > 0)
       
-      sites <- unique(base_df$site)
-      site_colors <- RColorBrewer::brewer.pal(n = length(sites), name = "Paired")
-      names(site_colors) <- sites
+      site_colors <- RColorBrewer::brewer.pal(n = length(sites$code), name = "Paired")
+      names(site_colors) <- sites$code
       
       tm <- top_metric()
       ycol <- sym(tm$col)
@@ -433,9 +433,8 @@ server <- function(input, output, session) {
       base_df <- filtered_df()
       req(nrow(base_df) > 0)
       
-      sites <- unique(gages$site)
-      site_colors <- RColorBrewer::brewer.pal(n = length(sites), name = "Paired")
-      names(site_colors) <- sites
+      site_colors <- RColorBrewer::brewer.pal(n = length(sites$code), name = "Paired")
+      names(site_colors) <- sites$code
       
       # ---- Depth traces ----
       tm <- top_metric()
@@ -487,8 +486,8 @@ server <- function(input, output, session) {
         
       }
 
-      for (s in sites) {
-        df_s <- base_df |> filter(site == s)
+      for (s in sites$code) {
+        df_s <- base_df |> filter(code == s)
         
         p <- add_trace(
           p,
@@ -496,11 +495,11 @@ server <- function(input, output, session) {
           y = df_s[[ycol]],
           type = "scatter",
           mode = "lines",
-          name = s,
+          name = site_labels[[s]],
           legendgroup = s,
           line = list(dash = "solid", color = site_colors[s]),
           text = paste(
-            s,
+            site_labels[[s]],
             tm$label,
             tm$fmt(df_s[[ycol]])
           ),
@@ -511,8 +510,8 @@ server <- function(input, output, session) {
       }
       
       # ---- Temperature traces ----
-      for (s in sites) {
-        df_s <- base_df |> filter(site == s)
+      for (s in sites$code) {
+        df_s <- base_df |> filter(code == s)
         
         # Water temperature (solid)
         p <- add_trace(
@@ -521,11 +520,11 @@ server <- function(input, output, session) {
           y = df_s$water_temperature,
           type = "scatter",
           mode = "lines",
-          name = s,
+          name = site_labels[[s]],
           legendgroup = s,
           showlegend = FALSE, # merge with depth legend
           line = list(dash = "solid", color = site_colors[s]),
-          text = paste(s, "\nWater Temperature", sprintf("%.1f °F", df_s$water_temperature)),
+          text = paste(site_labels[[s]], "\nWater Temperature", sprintf("%.1f °F", df_s$water_temperature)),
           hoverinfo = "text+x",
           connectgaps = FALSE,
           yaxis = "y2"
@@ -538,10 +537,10 @@ server <- function(input, output, session) {
           y = df_s$air_temperature,
           type = "scatter",
           mode = "lines",
-          name = paste0(s, " (ambient)"),
+          name = paste0(site_labels[[s]], " (ambient)"),
           legendgroup = paste0(s, "_ambient"),
           line = list(dash = "dot", color = site_colors[s]),
-          text = paste(s, "\nAir Temperature", sprintf("%.1f °F", df_s$air_temperature)),
+          text = paste(site_labels[[s]], "\nAir Temperature", sprintf("%.1f °F", df_s$air_temperature)),
           hoverinfo = "text+x",
           connectgaps = FALSE,
           yaxis = "y2"
