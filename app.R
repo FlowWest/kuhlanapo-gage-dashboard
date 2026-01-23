@@ -12,6 +12,8 @@ library(plotly)
 library(patchwork)
 library(future)
 
+source(here::here("global.R"))
+
 ## CONFIG ======================================================================
 
 INTERACTIVE <- TRUE
@@ -45,16 +47,6 @@ message(
 )
 
 ## DATA DEFINITIONS =============================================================
-
-gages <- tribble(
-  ~code,   ~site,                 ~name,           ~type,
-  "MC-01","Lower Manning Creek", "2025SGMC01",    "troll",
-  "MC-01","Lower Manning Creek", "2025SGMC01_VL", "vulink",
-  "MC-03","Upper Manning Creek", "2025SGMC03",    "troll",
-  "MC-03","Upper Manning Creek", "2025SGMC03_VL", "vulink",
-  "MC-02","Secondary Channel",   "2025SGMC02",    "troll",
-  "MC-02","Secondary Channel",   "2025SGMC02_VL", "vulink"
-) |> mutate(across(everything(), as.character))
 
 empty_ts_schema <- tibble(
   code = character(),
@@ -318,9 +310,8 @@ server <- function(input, output, session) {
       label_df <- df_latest()
       req(nrow(base_df) > 0, nrow(label_df) > 0)
       
-      sites <- unique(base_df$site)
-      site_colors <- RColorBrewer::brewer.pal(n = length(sites), name = "Paired")
-      names(site_colors) <- sites
+      site_colors <- RColorBrewer::brewer.pal(n = length(sites$code), name = "Paired")
+      names(site_colors) <- sites$code
       
       # ---- Clean depth data ----
       base_df_depth <- base_df |> filter(!is.na(depth))
@@ -372,16 +363,15 @@ server <- function(input, output, session) {
       base_df <- filtered_df()
       req(nrow(base_df) > 0)
       
-      sites <- unique(gages$site)
-      site_colors <- RColorBrewer::brewer.pal(n = length(sites), name = "Paired")
-      names(site_colors) <- sites
+      site_colors <- RColorBrewer::brewer.pal(n = length(sites$code), name = "Paired")
+      names(site_colors) <- sites$code
       
       # ---- Depth traces ----
       p <- plot_ly() |>
         config(displayModeBar = TRUE)
       
-      for (s in sites) {
-        df_s <- base_df |> filter(site == s)
+      for (s in sites$code) {
+        df_s <- base_df |> filter(code == s)
         
         # Depth trace
         p <- add_trace(
@@ -390,10 +380,10 @@ server <- function(input, output, session) {
           y = df_s$depth,
           type = "scatter",
           mode = "lines",
-          name = s,
+          name = site_labels[[s]],
           legendgroup = s,
           line = list(dash = "solid", color = site_colors[s]),
-          text = paste(s, "\nDepth", sprintf("%.1f ft", df_s$depth)),
+          text = paste(site_labels[[s]], "\nDepth", sprintf("%.1f ft", df_s$depth)),
           hoverinfo = "text+x",
           connectgaps = FALSE,
           yaxis = "y"
@@ -401,8 +391,8 @@ server <- function(input, output, session) {
       }
       
       # ---- Temperature traces ----
-      for (s in sites) {
-        df_s <- base_df |> filter(site == s)
+      for (s in sites$code) {
+        df_s <- base_df |> filter(code == s)
         
         # Water temperature (solid)
         p <- add_trace(
@@ -411,11 +401,11 @@ server <- function(input, output, session) {
           y = df_s$water_temperature,
           type = "scatter",
           mode = "lines",
-          name = s,
+          name = site_labels[[s]],
           legendgroup = s,
           showlegend = FALSE, # merge with depth legend
           line = list(dash = "solid", color = site_colors[s]),
-          text = paste(s, "\nWater Temperature", sprintf("%.1f °F", df_s$water_temperature)),
+          text = paste(site_labels[[s]], "\nWater Temperature", sprintf("%.1f °F", df_s$water_temperature)),
           hoverinfo = "text+x",
           connectgaps = FALSE,
           yaxis = "y2"
@@ -428,10 +418,10 @@ server <- function(input, output, session) {
           y = df_s$air_temperature,
           type = "scatter",
           mode = "lines",
-          name = paste0(s, " (ambient)"),
+          name = paste0(site_labels[[s]], " (ambient)"),
           legendgroup = paste0(s, "_ambient"),
           line = list(dash = "dot", color = site_colors[s]),
-          text = paste(s, "\nAir Temperature", sprintf("%.1f °F", df_s$air_temperature)),
+          text = paste(site_labels[[s]], "\nAir Temperature", sprintf("%.1f °F", df_s$air_temperature)),
           hoverinfo = "text+x",
           connectgaps = FALSE,
           yaxis = "y2"
