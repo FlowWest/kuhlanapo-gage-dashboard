@@ -1,8 +1,8 @@
 sites <- tribble(
-  ~code,  ~site, ~site_label, ~twg_elev,
-  "MC-01", "Lower Manning Creek", "Lower West Branch",          1327.83, # lower
-  "MC-03", "Upper Manning Creek", "Mainstem Above Bifurcation", 1329.63, # upper
-  "MC-02", "Secondary Channel",   "Secondary Channel",          1331.55, # secondary
+  ~code,   ~site,                 ~site_label,                  ~site_descrip,            ~twg_elev,
+  "MC-01", "Lower Manning Creek", "Manning Creek West Branch",  "5400 ft DS Soda Bay Rd", 1327.83, # lower
+  "MC-03", "Upper Manning Creek", "Manning Creek Mainstem",     "3800 ft DS Soda Bay Rd", 1329.63, # upper
+  "MC-02", "Secondary Channel",   "Secondary Channel",          "4300 ft DS Soda Bay Rd", 1331.55, # secondary
 )
 
 gages <- tribble(
@@ -19,4 +19,8 @@ gages <- tribble(
 
 site_labels <- sites |>
   select(code, site_label) |>
+  deframe()
+
+site_descrips <- sites |>
+  select(code, site_descrip) |>
   deframe()
