@@ -264,7 +264,7 @@ server <- function(input, output, session) {
       ),
       wse_ft_navd88 = list(
         col   = "wse_ft_navd88",
-        label = "Water Surface Elevation (ft NAVD88)",
+        label = "WSE (ft NAVD88)",
         fmt   = function(x) sprintf("%.2f", x)
       ),
       flow_cfs = list(
@@ -344,7 +344,6 @@ server <- function(input, output, session) {
       # apply flow rating curve:
       nest(.by = c(code, site)) |>
       inner_join(sites |> select(code, twg_elev), by=join_by(code)) |>
-      glimpse() |>
       inner_join(enframe(rating_curves, 
                          name = "code", 
                          value = "rating_curve"),
