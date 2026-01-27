@@ -30,6 +30,8 @@ cache_lock_file <- file.path(cache_dir, "refresh.lock")
 
 rds_url <- "https://github.com/flowwest/kuhlanapo-gage-dashboard/raw/main/data/gage_data.rds"
 
+FORCE_LOCAL <- T
+
 message(
   sprintf(
     "[cache:init] dir=%s | ttl=%s sec (%.1f hrs) | forced_refresh=07:30 PT",
@@ -209,9 +211,7 @@ refresh_cache_async <- function() {
 
 ui <- fluidPage(
   
-  fluidRow(
-    column(
-      12,
+  flowLayout(
       dateRangeInput(
         "date_range",
         label = "",
@@ -219,8 +219,20 @@ ui <- fluidPage(
         end = Sys.Date(),
         min = as.Date("2025-12-06"),
         max = Sys.Date()
+      ),
+      
+      shinyWidgets::radioGroupButtons(
+        "top_metric",
+        label = "",
+        choices = c(
+          "Depth"        = "depth",
+          "GW Depth"   = "gw_depth_ft",
+          "GW Elev"        = "gwe_ft_navd88"
+        ),
+        selected = "depth",
+        size = "sm"
+        
       )
-    )
   ),
   
   fluidRow(
@@ -237,8 +249,34 @@ ui <- fluidPage(
 ## SERVER ======================================================================
 
 server <- function(input, output, session) {
+
+  top_metric <- reactive({
+    switch(
+      input$top_metric,
+      depth = list(
+        col   = "depth",
+        label = "Depth (ft)",
+        fmt   = function(x) sprintf("%.1f", x)
+      ),
+      gw_depth_ft = list(
+        col   = "gw_depth_ft",
+        label = "GW Depth (ft)",
+        fmt   = function(x) sprintf("%.2f", x)
+      ),
+      gwe_ft_navd88 = list(
+        col   = "gwe_ft_navd88",
+        label = "GW Elev (ft NAVD88)",
+        fmt   = function(x) sprintf("%.2f", x)
+      )
+    )
+  })
   
   ts_data <- reactive({
+    
+    if((file.exists(here::here("data/gage_data.rds"))) && FORCE_LOCAL) {
+      message("FORCE_LOCAL is on; using data/gage_data.rds locally")
+      return(readRDS(here::here("data/gage_data.rds")))
+    }
     
     if (!file.exists(cache_data_file)) {
       message("[cache:bootstrap] no cache → downloading initial copy")
@@ -259,30 +297,44 @@ server <- function(input, output, session) {
   
   df_pivot <- reactive({
     ts_data() |>
+      inner_join(sites |> select(code, category), by = join_by(code)) |>
       filter(parm_name %in% c("Depth", "Temperature")) |>
       mutate(parm_name_modified = case_when(
         parm_name == "Temperature" & type == "vulink" ~ "Air Temperature",
         parm_name == "Temperature" ~ "Water Temperature",
         TRUE ~ parm_name
       )) |>
+      # convert units. also, depth readings less than zero are invalid
       mutate(value = case_when(
         parm_name == "Depth" ~ if_else(value > 0, value / 0.3048, 0),
         parm_name == "Temperature" ~ value * 9 / 5 + 32
       )) |>
-      select(code, site, timestamp, parm_name_modified, value) |>
+      select(category, code, site, timestamp, parm_name_modified, value) |>
       pivot_wider(names_from = parm_name_modified, values_from = value) |>
       clean_names() |>
       # if troll is freezing, depth reading is invalid
-      group_by(code, site) |>
+      group_by(category, code, site) |>
       mutate(depth = if_else((water_temperature > 32) & 
                                coalesce(lag(water_temperature) > 32, TRUE), 
                              depth, NA)) |>
       ungroup() |>
       # don't show troll temp if there is no water
       mutate(water_temperature = if_else(depth > 0, water_temperature, NA)) |>
-      mutate(site = factor(site, levels = unique(gages$site))) |>
-      mutate(timestamp = with_tz(timestamp, "America/Los_Angeles"))
-  })
+      mutate(site = factor(site, levels = unique(sensors$site))) |>
+      mutate(timestamp = with_tz(timestamp, "America/Los_Angeles")) |>
+      # correct piezometer for well depth and calculate piezometer GWE
+      inner_join(sensors |> filter(type == "troll") |> select(code, name), by = join_by(code)) |>
+      left_join(piezo_meta |> select(name, gse_ft_navd88, well_depth_ft), by = join_by(name)) |>
+      mutate(gw_depth_ft = if_else(category == "Piezometer",
+                             well_depth_ft - depth,
+                             NA),
+             gwe_ft_navd88 = if_else(category == "Piezometer",
+                                     gse_ft_navd88 - well_depth_ft + depth,
+                                     NA)
+             ) |>
+      select(-name, -gse_ft_navd88, -well_depth_ft) |>
+      glimpse()
+    })
   
   filtered_df <- reactive({
     df <- df_pivot()
@@ -302,75 +354,19 @@ server <- function(input, output, session) {
       ungroup()
   })
   
-  output$combined_plot <- if (!INTERACTIVE) {
+  output$combined_plot <- renderPlotly({ 
     
-    renderPlot({
-      
-      base_df  <- filtered_df()
-      label_df <- df_latest()
-      req(nrow(base_df) > 0, nrow(label_df) > 0)
-      
-      site_colors <- RColorBrewer::brewer.pal(n = length(sites$code), name = "Paired")
-      names(site_colors) <- sites$code
-      
-      # ---- Clean depth data ----
-      base_df_depth <- base_df |> filter(!is.na(depth))
-      
-      # Depth plot
-      p_depth <- ggplot(base_df_depth, aes(x = timestamp, y = depth, color = site)) +
-        geom_line() +
-        geom_text_repel(
-          data = label_df |> filter(!is.na(depth)),
-          aes(y = depth, label = sprintf("%.1f", depth)),
-          hjust = 1
-        ) +
-        scale_color_manual(values = site_colors, na.value = "grey50") +
-        theme_minimal() +
-        labs(y = "Depth (ft)", x = NULL, color = "Gage") +
-        theme(legend.position = "bottom", legend.box = "horizontal")
-      
-      # ---- Clean temperature data ----
-      temp_long <- base_df |>
-        pivot_longer(c(air_temperature, water_temperature),
-                     names_to = "parameter",
-                     values_to = "temperature") |>
-        mutate(
-          parameter = case_when(
-            parameter == "air_temperature"   ~ "Air Temperature",
-            parameter == "water_temperature" ~ "Water Temperature"
-          )
-        ) |> 
-        filter(!is.na(temperature))
-      
-      # Temperature plot
-      p_temp <- ggplot(temp_long, aes(x = timestamp, y = temperature, color = site)) +
-        geom_line(aes(linetype = parameter)) +
-        scale_color_manual(values = site_colors, na.value = "grey50") +
-        scale_linetype_manual(values = c("Water Temperature" = "solid",
-                                         "Air Temperature"   = "dashed")) +
-        theme_minimal() +
-        labs(y = "Temperature (°F)", x = NULL, color = "Gage", linetype = "Parameter") +
-        theme(legend.position = "bottom", legend.box = "horizontal")
-      
-      # ---- Combine with patchwork ----
-      p_depth / p_temp + plot_layout(axes = "collect_x")
-    })
+    if(top_metric()$col %in% c("depth")) {
     
-  } else {
-    
-    renderPlotly({
       
       base_df <- filtered_df()
       req(nrow(base_df) > 0)
-      
-      site_colors <- RColorBrewer::brewer.pal(n = length(sites$code), name = "Paired")
-      names(site_colors) <- sites$code
       
       # ---- Depth traces ----
       p <- plot_ly() |>
         config(displayModeBar = TRUE)
       
-      for (s in sites$code) {
+      for (s in sites_stage$code) {
         df_s <- base_df |> filter(code == s)
         
         # Depth trace
@@ -391,7 +387,7 @@ server <- function(input, output, session) {
       }
       
       # ---- Temperature traces ----
-      for (s in sites$code) {
+      for (s in sites_stage$code) {
         df_s <- base_df |> filter(code == s)
         
         # Water temperature (solid)
@@ -462,10 +458,81 @@ server <- function(input, output, session) {
         ),
         margin = list(t = 40, b = 60, l = 60, r = 20)
       )
-    })
     
-    
+  }  else if(top_metric()$col %in% c("gw_depth_ft", "gwe_ft_navd88")) {
+      
+      base_df <- filtered_df()
+      req(nrow(base_df) > 0)
+      
+      # ---- Depth traces ----
+      tm <- top_metric()
+      ycol <- tm$col
+      
+      placeholder_value <- mean(base_df[[ycol]], na.rm=T)
+      
+      # min_lake <- 1318.257 + 3.4 # zero rumsey to NAVD88
+      # min_lake <- 1320.74 # as defined on USGS Clear Lake Lakeport gage
+      # max_lake <- min_lake + 7.56
+      # min_y <- if (input$top_metric == "gwe_ft_navd88") min_lake else 0
+      # max_y <- max(base_df[[ycol]], na.rm=T) 
+      # max_y <- max_y + (max_y - min_y) * 0.05
+      
+      p <- plot_ly() |>
+        config(displayModeBar = TRUE)
+      
+      for (s in sites_piezo$code) {
+        df_s <- base_df |> filter(code == s)
+        has_data <- nrow(df_s) > 0 && any(!is.na(df_s[[ycol]]))
+        
+        p <- add_trace(
+          p,
+          x = if (has_data) df_s$timestamp else Sys.time(),
+          y = if (has_data) df_s[[ycol]] else placeholder_value,
+          type = "scatter",
+          mode = "lines",
+          name = paste0(site_labels[[s]], ", ", site_descrips[[s]]),
+          legendgroup = substring(s, 1, 4),
+          line = list(dash = "solid", color = piezo_colors[s]),
+          text = paste(
+            site_labels[[s]],
+            tm$label,
+            tm$fmt(df_s[[ycol]])
+          ),
+          hoverinfo = "text+x",
+          connectgaps = FALSE,
+          yaxis = "y"#,
+          #visible = if (has_data) TRUE else "legendonly"
+        )
+      }
+      
+      # ---- Layout with dynamic vertical sizing ----
+      p |> layout(
+        dragmode = "zoom",
+        xaxis = list(
+          title = "",
+          domain = c(0, 1),
+          side = "top",
+          showspikes = TRUE
+        ),
+        yaxis = list(
+          title = tm$label,
+          domain = c(0.5, 1)
+          #fixedrange = TRUE,
+          #range = c(min_y, max_y)
+        ),
+        legend = list(
+          orientation = "h",
+          x = 0.5,
+          yref = "container",
+          xanchor = "center",
+          y = 0,
+          automargin = TRUE
+        ),
+        margin = list(t = 40, b = 60, l = 60, r = 20)
+      )
   }
+  
+ })
   
 }
 

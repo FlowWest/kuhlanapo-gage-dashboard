@@ -1,19 +1,22 @@
+library(tidyverse)
+
 sites <- tribble(
-  ~category,    ~code,   ~site,                 ~site_label,                  ~site_descrip,            ~twg_elev, 
-  "Stage Gage", "MC-01", "Lower Manning Creek", "Manning Creek West Branch",  "5400 ft DS Soda Bay Rd", 1327.83,   
-  "Stage Gage", "MC-03", "Upper Manning Creek", "Manning Creek Mainstem",     "3800 ft DS Soda Bay Rd", 1329.63,   
-  "Stage Gage", "MC-02", "Secondary Channel",   "Secondary Channel",          "4300 ft DS Soda Bay Rd", 1331.55,   
-  "Piezometer", "PZ-A1", "Piezometer A1",       "Piezometer A1",              "X ft from Clear Lake",   NA,        
-  "Piezometer", "PZ-A2", "Piezometer A2",       "Piezometer A2",              "X ft from Clear Lake",   NA,        
-  "Piezometer", "PZ-A3", "Piezometer A3",       "Piezometer A3",              "X ft from Clear Lake",   NA,        
-  "Piezometer", "PZ-B1", "Piezometer B1",       "Piezometer B1",              "X ft from Clear Lake",   NA,        
-  "Piezometer", "PZ-B2", "Piezometer B2",       "Piezometer B2",              "X ft from Clear Lake",   NA,        
-  "Piezometer", "PZ-B3", "Piezometer B3",       "Piezometer B3",              "X ft from Clear Lake",   NA,        
-  "Piezometer", "PZ-B4", "Piezometer B4",       "Piezometer B4",              "X ft from Clear Lake",   NA,        
-  "Piezometer", "PZ-C1", "Piezometer C1",       "Piezometer C1",              "X ft from Transect B",   NA,        
-  "Piezometer", "PZ-C2", "Piezometer C2",       "Piezometer C2",              "X ft from Transect B",   NA,        
-  "Piezometer", "PZ-C3", "Piezometer C3",       "Piezometer C3",              "X ft from Transect B",   NA,        
-)
+  ~category,    ~code,   ~site,                 ~site_label,                  ~site_descrip,                    ~twg_elev,
+  "Stage Gage", "MC-01", "Lower Manning Creek", "Manning Creek West Branch",  "5400 ft DS Soda Bay Rd",         1327.83,   
+  "Stage Gage", "MC-03", "Upper Manning Creek", "Manning Creek Mainstem",     "3800 ft DS Soda Bay Rd",         1329.63,   
+  "Stage Gage", "MC-02", "Secondary Channel",   "Secondary Channel",          "4300 ft DS Soda Bay Rd",         1331.55,   
+  "Piezometer", "PZ-A1", "Piezometer A1",       "Piezometer A1",              "E, 300 ft S of Clear Lake",   NA,        
+  "Piezometer", "PZ-A2", "Piezometer A2",       "Piezometer A2",              "E, 1000 ft S of Clear Lake",  NA,        
+  "Piezometer", "PZ-A3", "Piezometer A3",       "Piezometer A3",              "E, 2000 ft S of Clear Lake",  NA,        
+  "Piezometer", "PZ-B1", "Piezometer B1",       "Piezometer B1",              "W, 800 ft S of Clear Lake",   NA,        
+  "Piezometer", "PZ-B2", "Piezometer B2",       "Piezometer B2",              "W, 1400 ft S of Clear Lake",  NA,        
+  "Piezometer", "PZ-B3", "Piezometer B3",       "Piezometer B3",              "W, 2600 ft S of Clear Lake",  NA,        
+  "Piezometer", "PZ-B4", "Piezometer B4",       "Piezometer B4",              "W, 3500 ft S of Clear Lake",  NA,        
+  "Piezometer", "PZ-C1", "Piezometer C1",       "Piezometer C1",              "W, 1000 ft W of Transect B",  NA,        
+  "Piezometer", "PZ-C2", "Piezometer C2",       "Piezometer C2",              "W, 1500 ft W of Transect B",  NA,        
+  "Piezometer", "PZ-C3", "Piezometer C3",       "Piezometer C3",              "W, 2400 ft W of Transect B",  NA,        
+) |>
+  mutate(category = as_factor(category))
 
 sensors <- tribble(
   ~code,   ~name,           ~type,
@@ -35,10 +38,16 @@ sensors <- tribble(
   "PZ-C3", "2025PZC03",     "troll",
   "PZ-B4", "2025BAROK01",   "barotroll"
 ) |> 
-  mutate(across(everything(), as.character)) 
+  mutate(across(everything(), as.character)) |>
+  inner_join(sites |>
+               select(code, category, site), 
+             by = join_by(code))
 
 gages <- sensors |>
-  inner_join(sites |> select(code, site), by =)
+  filter(category == "Stage Gage") 
+
+piezos <- sensors |>
+  filter(category == "Piezometer") 
 
 site_labels <- sites |>
   select(code, site_label) |>
@@ -47,6 +56,13 @@ site_labels <- sites |>
 site_descrips <- sites |>
   select(code, site_descrip) |>
   deframe()
+
+sites_stage <- sites |> filter(category == "Stage Gage")
+
+site_colors <- RColorBrewer::brewer.pal(n = length(sites_stage$code), name = "Paired")
+names(site_colors) <- sites_stage$code
+
+sites_piezo <- sites |> filter(category == "Piezometer")
 
 piezo_colors <- tribble(
   ~code, ~color,
@@ -60,4 +76,24 @@ piezo_colors <- tribble(
   "PZ-C1", "#47d09c", 
   "PZ-C2", "#acf186", 
   "PZ-C3", "#fcffaa", 
+) |> deframe()
+
+piezo_meta <- tribble(
+  ~name,        ~gse_ft_navd88,  ~stickup_ft, ~cable_ft, ~well_depth_ft,
+  "2025PZA01",  1329.250, 3.4,          NA,       6.15,
+  "2025PZA02",  1326.214, 3.4,          NA,       4.5,
+  "2025PZA03",  1328.249, 3.43,          NA,      7.8,
+  "2025PZB01",  1326.417, NA,          NA,        NA,
+  "2025PZB02",  1326.019, 4.55,          NA,      3.65,
+  "2025PZB03",  1329.669, 3.75,          NA,      8.0,
+  "2025PZB04",  1331.618, 3.3,          NA,       9.2,
+  "2025PZC01",  1330.484, NA,          NA,        NA,
+  "2025PZC02",  1328.072, NA,          NA,        NA,
+  "2025PZC03",  1333.552, NA,          NA,        NA,
+) |> mutate(
+  across(c(stickup_ft, cable_ft, well_depth_ft), \(x) coalesce(x, 6)),
+  # datum_ft = gse_ft + stickup_ft - cable_ft,
+  datum_ft = gse_ft_navd88 - well_depth_ft,
 )
+
+
