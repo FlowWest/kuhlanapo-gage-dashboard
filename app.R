@@ -226,8 +226,8 @@ ui <- fluidPage(
         label = "",
         choices = c(
           "Depth"        = "depth",
-          "GW Depth"   = "gw_depth_ft",
-          "GW Elev"        = "gwe_ft_navd88"
+          "GW Elev"        = "gwe_ft_navd88",
+          "GW Depth"   = "gw_depth_ft"
         ),
         selected = "depth",
         size = "sm"
@@ -260,12 +260,12 @@ server <- function(input, output, session) {
       ),
       gw_depth_ft = list(
         col   = "gw_depth_ft",
-        label = "GW Depth (ft)",
+        label = "Surface to Groundwater Depth (ft)",
         fmt   = function(x) sprintf("%.2f", x)
       ),
       gwe_ft_navd88 = list(
         col   = "gwe_ft_navd88",
-        label = "GW Elev (ft NAVD88)",
+        label = "Groundwater Elevation (ft NAVD88)",
         fmt   = function(x) sprintf("%.2f", x)
       )
     )
@@ -324,15 +324,15 @@ server <- function(input, output, session) {
       mutate(timestamp = with_tz(timestamp, "America/Los_Angeles")) |>
       # correct piezometer for well depth and calculate piezometer GWE
       inner_join(sensors |> filter(type == "troll") |> select(code, name), by = join_by(code)) |>
-      left_join(piezo_meta |> select(name, gse_ft_navd88, well_depth_ft), by = join_by(name)) |>
-      mutate(gw_depth_ft = if_else(category == "Piezometer",
-                             well_depth_ft - depth,
-                             NA),
-             gwe_ft_navd88 = if_else(category == "Piezometer",
-                                     gse_ft_navd88 - well_depth_ft + depth,
-                                     NA)
+      left_join(piezo_meta |> select(name, gse_ft_navd88, tdx_ft_navd88), by = join_by(name)) |>
+      mutate(gwe_ft_navd88 = if_else(category == "Piezometer",
+                                     tdx_ft_navd88 + depth,
+                                     NA),
+             gw_depth_ft = if_else(category == "Piezometer",
+                                   gse_ft_navd88 - gwe_ft_navd88,
+                                   NA)
              ) |>
-      select(-name, -gse_ft_navd88, -well_depth_ft) |>
+      select(-name, -gse_ft_navd88, -tdx_ft_navd88) |>
       glimpse()
     })
   
@@ -473,9 +473,12 @@ server <- function(input, output, session) {
       # min_lake <- 1318.257 + 3.4 # zero rumsey to NAVD88
       # min_lake <- 1320.74 # as defined on USGS Clear Lake Lakeport gage
       # max_lake <- min_lake + 7.56
-      # min_y <- if (input$top_metric == "gwe_ft_navd88") min_lake else 0
-      # max_y <- max(base_df[[ycol]], na.rm=T) 
-      # max_y <- max_y + (max_y - min_y) * 0.05
+      min_y <- switch(input$top_metric,
+                      "gw_depth_ft" = max(base_df[[ycol]], na.rm=T),
+                      "gse_ft_navd88" = min(base_df[[ycol]], na.rm=T) )
+      max_y <- switch(input$top_metric,
+                      "gw_depth_ft" = 0,
+                      "gse_ft_navd88" = max(base_df[[ycol]], na.rm=T))
       
       p <- plot_ly() |>
         config(displayModeBar = TRUE)
@@ -516,9 +519,9 @@ server <- function(input, output, session) {
         ),
         yaxis = list(
           title = tm$label,
-          domain = c(0.5, 1)
-          #fixedrange = TRUE,
-          #range = c(min_y, max_y)
+          domain = c(0, 1),
+          fixedrange = TRUE,
+          range = c(min_y, max_y)
         ),
         legend = list(
           orientation = "h",

@@ -79,21 +79,17 @@ piezo_colors <- tribble(
 ) |> deframe()
 
 piezo_meta <- tribble(
-  ~name,        ~gse_ft_navd88,  ~stickup_ft, ~cable_ft, ~well_depth_ft,
-  "2025PZA01",  1329.250, 3.4,          NA,       6.15,
-  "2025PZA02",  1326.214, 3.4,          NA,       4.5,
-  "2025PZA03",  1328.249, 3.43,          NA,      7.8,
-  "2025PZB01",  1326.417, NA,          NA,        NA,
-  "2025PZB02",  1326.019, 4.55,          NA,      3.65,
-  "2025PZB03",  1329.669, 3.75,          NA,      8.0,
-  "2025PZB04",  1331.618, 3.3,          NA,       9.2,
-  "2025PZC01",  1330.484, NA,          NA,        NA,
-  "2025PZC02",  1328.072, NA,          NA,        NA,
-  "2025PZC03",  1333.552, NA,          NA,        NA,
-) |> mutate(
-  across(c(stickup_ft, cable_ft, well_depth_ft), \(x) coalesce(x, 6)),
-  # datum_ft = gse_ft + stickup_ft - cable_ft,
-  datum_ft = gse_ft_navd88 - well_depth_ft,
-)
+  ~name,        ~gse_ft_navd88,  ~tdx_ft_navd88,
+  "2025PZA01",  1329.250,        1323.550,
+  "2025PZA02",  1326.214,        1321.964,
+  "2025PZA03",  1328.249,        1321.604,
+  "2025PZB01",  1326.417,        1322.147,
+  "2025PZB02",  1326.019,        1323.079,
+  "2025PZB03",  1329.669,        1322.189,
+  "2025PZB04",  1331.618,        1322.918,
+  "2025PZC01",  1330.484,        1322.609,
+  "2025PZC02",  1328.072,        1323.287,
+  "2025PZC03",  1333.552,        1327.207,
+) 
 
 
