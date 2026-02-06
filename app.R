@@ -51,7 +51,6 @@ message(
 ## DATA DEFINITIONS =============================================================
 
 empty_ts_schema <- tibble(
-  category = factor(),
   code = character(),
   site = character(),
   name = character(),

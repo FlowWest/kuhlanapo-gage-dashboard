@@ -23,6 +23,8 @@ DATA_FILE <- "data/gage_data.rds"
 # Safety overlap when appending (prevents boundary misses)
 OVERLAP_DAYS <- 2
 
+START_FRESH <- FALSE
+
 ## AUTH =======================================================================
 
 get_access_token <- function() {
@@ -107,12 +109,18 @@ existing_data <- if (file.exists(DATA_FILE)) {
   NULL
 }
 
+if (START_FRESH) {
+  existing_data <- existing_data[NULL, ] 
+}
+
 ## DETERMINE FETCH WINDOW ======================================================
 
 end_ts <- Sys.time()
 
 start_ts <- if (!is.null(existing_data) && nrow(existing_data) > 0) {
   max(existing_data$timestamp, na.rm = TRUE) - days(OVERLAP_DAYS)
+} else if (START_FRESH) {
+  ymd("2025-12-01")
 } else {
   end_ts - days(14)
 }
