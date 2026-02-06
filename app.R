@@ -22,20 +22,24 @@ INTERACTIVE <- TRUE
 CACHE_TTL <- 24 * 60 * 60
 FORCE_REFRESH_TIME_PT <- hm("08:00")
 
-cache_dir <- file.path(getwd(), ".cache", "hydrovu")
-dir.create(cache_dir, recursive = TRUE, showWarnings = FALSE)
+cache_dir_hydrovu <- file.path(getwd(), ".cache", "hydrovu")
+dir.create(cache_dir_hydrovu, recursive = TRUE, showWarnings = FALSE)
+cache_data_file_hydrovu <- file.path(cache_dir_hydrovu, "gage_data.rds")
+cache_lock_file_hydrovu <- file.path(cache_dir_hydrovu, "refresh.lock")
+rds_url_hydrovu <- "https://github.com/flowwest/kuhlanapo-gage-dashboard/raw/main/data/gage_data.rds"
 
-cache_data_file <- file.path(cache_dir, "gage_data.rds")
-cache_lock_file <- file.path(cache_dir, "refresh.lock")
-
-rds_url <- "https://github.com/flowwest/kuhlanapo-gage-dashboard/raw/main/data/gage_data.rds"
+usgs_cache_dir <- file.path(getwd(), ".cache", "usgs")
+dir.create(usgs_cache_dir, recursive = TRUE, showWarnings = FALSE)
+cache_data_file_lakelevel <- file.path(usgs_cache_dir, "usgs_lake_level_11450000.rds")
+cache_lock_file_lakelevel <- file.path(usgs_cache_dir, "refresh.lock")
+rds_url_lakelevel <- "https://github.com/flowwest/kuhlanapo-gage-dashboard/raw/main/data/usgs_lake_level_11450000.rds"
 
 FORCE_LOCAL <- T
 
 message(
   sprintf(
     "[cache:init] dir=%s | ttl=%s sec (%.1f hrs) | forced_refresh=07:30 PT",
-    normalizePath(cache_dir, winslash = "/", mustWork = FALSE),
+    normalizePath(cache_dir_hydrovu, winslash = "/", mustWork = FALSE),
     CACHE_TTL,
     CACHE_TTL / 3600
   )
@@ -44,7 +48,7 @@ message(
 message(
   sprintf(
     "[cache:init] data_file=%s",
-    normalizePath(cache_data_file, winslash = "/", mustWork = FALSE)
+    normalizePath(cache_data_file_hydrovu, winslash = "/", mustWork = FALSE)
   )
 )
 
@@ -64,7 +68,7 @@ empty_ts_schema <- tibble(
 
 ## HELPERS =====================================================================
 
-read_cached_data <- function() {
+read_cached_data <- function(cache_data_file) {
   if (!file.exists(cache_data_file)) {
     message("[cache:read] no cache file on disk")
     return(NULL)
@@ -81,7 +85,7 @@ read_cached_data <- function() {
   )
 }
 
-write_cache <- function(df) {
+write_cache <- function(df, cache_data_file) {
   tmp <- paste0(cache_data_file, ".tmp")
   
   message(
@@ -98,7 +102,7 @@ write_cache <- function(df) {
   message("[cache:write] write complete")
 }
 
-cache_is_stale <- function() {
+cache_is_stale <- function(cache_data_file) {
   
   if (!file.exists(cache_data_file)) {
     message("[cache:check] cache file missing → stale=TRUE")
@@ -140,7 +144,7 @@ cache_is_stale <- function() {
   ttl_stale || force_stale
 }
 
-refresh_cache_async <- function() {
+refresh_cache_async <- function(cache_lock_file, rds_url) {
   
   if (file.exists(cache_lock_file)) {
     message("[cache:refresh] skipped (lock exists)")
@@ -171,7 +175,7 @@ refresh_cache_async <- function() {
       download.file(rds_url, tmp_file, mode = "wb", quiet = TRUE)
       
       new_data <- readRDS(tmp_file)
-      old_data <- read_cached_data()
+      old_data <- read_cached_data(cache_data_file_hydrovu)
       
       message(
         sprintf(
@@ -195,7 +199,7 @@ refresh_cache_async <- function() {
         )
       )
       
-      write_cache(combined)
+      write_cache(combined, cache_data_file_hydrovu)
       
       message("[cache:refresh] refresh SUCCESS")
       
@@ -211,28 +215,37 @@ refresh_cache_async <- function() {
 
 ui <- fluidPage(
   
+  tags$style(HTML("
+  .flow-fullwidth > * {
+    width: auto !important;
+  }
+")),
+  
   flowLayout(
-      dateRangeInput(
-        "date_range",
-        label = "",
-        start = Sys.Date() - 30,
-        end = Sys.Date(),
-        min = as.Date("2025-12-06"),
-        max = Sys.Date()
+    class = "flow-fullwidth",
+    style = "width: 95vw;",
+    
+    dateRangeInput(
+      "date_range",
+      label = "",
+      start = Sys.Date() - 30,
+      end = Sys.Date(),
+      min = as.Date("2025-12-06"),
+      max = Sys.Date()
+    ),
+    
+    shinyWidgets::radioGroupButtons(
+      "top_metric",
+      label = "",
+      choices = c(
+        "Depth" = "depth",
+        "Water Surface" = "wse_ft_navd88",
+        "GW Elev" = "gwe_ft_navd88",
+        "GW Depth" = "gw_depth_ft"
       ),
-      
-      shinyWidgets::radioGroupButtons(
-        "top_metric",
-        label = "",
-        choices = c(
-          "Depth"        = "depth",
-          "GW Elev"        = "gwe_ft_navd88",
-          "GW Depth"   = "gw_depth_ft"
-        ),
-        selected = "depth",
-        size = "sm"
-        
-      )
+      selected = "depth",
+      size = "sm"
+    )
   ),
   
   fluidRow(
@@ -258,6 +271,11 @@ server <- function(input, output, session) {
         label = "Depth (ft)",
         fmt   = function(x) sprintf("%.1f", x)
       ),
+      wse_ft_navd88 = list(
+        col   = "wse_ft_navd88",
+        label = "WSE (ft NAVD88)",
+        fmt   = function(x) sprintf("%.2f", x)
+      ),
       gw_depth_ft = list(
         col   = "gw_depth_ft",
         label = "Surface to Groundwater Depth (ft)",
@@ -278,16 +296,35 @@ server <- function(input, output, session) {
       return(readRDS(here::here("data/gage_data.rds")))
     }
     
-    if (!file.exists(cache_data_file)) {
+    if (!file.exists(cache_data_file_hydrovu)) {
       message("[cache:bootstrap] no cache → downloading initial copy")
-      download.file(rds_url, cache_data_file, mode = "wb", quiet = TRUE)
+      download.file(rds_url, cache_data_file_hydrovu, mode = "wb", quiet = TRUE)
     }
     
-    df <- read_cached_data()
+    df <- read_cached_data(cache_data_file_hydrovu)
     
     if (cache_is_stale()) {
       message("[cache:decision] cache is stale → triggering async refresh")
-      refresh_cache_async()
+      refresh_cache_async(cache_lock_file_hydrovu, rds_url_hydrovu)
+    } else {
+      message("[cache:decision] cache is fresh → no refresh")
+    }
+    
+    df
+  })
+  
+  ll_data <- reactive({
+    
+    if (!file.exists(cache_data_file_lakelevel)) {
+      message("[cache:bootstrap] no cache → downloading initial copy")
+      download.file(rds_url_lakelevel, cache_data_file_lakelevel, mode = "wb", quiet = TRUE)
+    }
+    
+    df <- read_cached_data(cache_data_file_lakelevel)
+    
+    if (cache_is_stale(cache_data_file_lakelevel)) {
+      message("[cache:decision] cache is stale → triggering async refresh")
+      refresh_cache_async(cache_lock_file_lakelevel, rds_url_lakelevel)
     } else {
       message("[cache:decision] cache is fresh → no refresh")
     }
@@ -322,6 +359,15 @@ server <- function(input, output, session) {
       mutate(water_temperature = if_else(depth > 0, water_temperature, NA)) |>
       mutate(site = factor(site, levels = unique(sensors$site))) |>
       mutate(timestamp = with_tz(timestamp, "America/Los_Angeles")) |>
+      #############
+      # LAKE LEVELS
+      left_join(ll_data() |> select(timestamp, lake_level = value), by = join_by(timestamp)) |>
+      ##############################
+      # GAGE WATER SURFACE ELEVATION
+      left_join(sites |> select(code, twg_elev), by=join_by(code)) |>
+      mutate(wse_ft_navd88 = if_else(depth > 0, depth + twg_elev, NA)) |>
+      #################################
+      # GROUNDWATER DEPTH AND ELEVATION
       # correct piezometer for well depth and calculate piezometer GWE
       inner_join(sensors |> filter(type == "troll") |> select(code, name), by = join_by(code)) |>
       left_join(piezo_meta |> select(name, gse_ft_navd88, tdx_ft_navd88), by = join_by(name)) |>
@@ -343,7 +389,9 @@ server <- function(input, output, session) {
                                    NA)
              ) |>
       select(-name, -gse_ft_navd88, -tdx_ft_navd88) |>
+      # join the lake level data
       glimpse()
+    
     })
   
   filtered_df <- reactive({
@@ -366,30 +414,95 @@ server <- function(input, output, session) {
   
   output$combined_plot <- renderPlotly({ 
     
-    if(top_metric()$col %in% c("depth")) {
+    p <- plot_ly() |>
+      config(displayModeBar = TRUE)
     
+    base_df <- filtered_df()
+    req(nrow(base_df) > 0)
+    tm <- top_metric()
+    ycol <- tm$col
+    
+    min_lake <- 1320.74 # as defined on USGS Clear Lake Lakeport gage
+    max_lake <- min_lake + 7.56
+    
+    if (ycol %in% c("wse_ft_navd88", "gwe_ft_navd88") & "lake_level" %in% names(base_df)) {
       
-      base_df <- filtered_df()
-      req(nrow(base_df) > 0)
+      df_ll_plot <- base_df |>
+        select(timestamp, lake_level) |>
+        distinct()  # collapse duplicates so only one trace
       
-      # ---- Depth traces ----
-      p <- plot_ly() |>
-        config(displayModeBar = TRUE)
+      # ---- Lake level traces ----
+      p <- add_trace(
+        p, 
+        x = c(min(df_ll_plot$timestamp), max(df_ll_plot$timestamp)),   # line from start to end
+        y = c(min_lake, min_lake),
+        type = "scatter",
+        mode = "lines",
+        line = list(color = "rgba(255,255,255,0)"),
+        hoverinfo = "text",
+        name = "Min Lake",
+        legendgroup = "lake_level",
+        text = "Min Lake",
+        showlegend = FALSE
+      )
+      p <- add_trace(
+        p,
+        x = df_ll_plot$timestamp,
+        y = df_ll_plot$lake_level,
+        type = "scatter",
+        mode = "none",         # no line markers
+        fill = "tonexty",      # fill area down to y=0
+        fillcolor = "rgba(0,0,255,0.2)",  # semi-transparent blue
+        name = "Lake Level (USGS)",
+        legendgroup = "lake_level",
+        text = paste0("Lake Level (ft NAVD88): ", sprintf("%.2f", df_ll_plot$lake_level)),
+        hoverinfo = "text+x",
+        yaxis = "y"
+      ) 
+      p <- add_trace(
+        p, 
+        x = c(min(df_ll_plot$timestamp), max(df_ll_plot$timestamp)),   # line from start to end
+        y = c(max_lake, max_lake),
+        type = "scatter",
+        mode = "lines",
+        line = list(dash = "dash", color = "rgba(0,0,255,0.2)"),
+        hoverinfo = "text",
+        name = "Full Lake",
+        legendgroup = "lake_level",
+        text = "Full Lake",
+        showlegend = TRUE
+      )
       
+      
+    }
+    
+    if(ycol %in% c("depth", "wse_ft_navd88")) {
+      
+      min_y <- switch(input$top_metric,
+                      "depth" = 0,
+                      "wse_ft_navd88" = min(min_lake, min(base_df[[ycol]], na.rm=T)) )
+      max_y <- switch(input$top_metric,
+                      "depth" = max(base_df[[ycol]], na.rm=T),
+                      "wse_ft_navd88" = max(base_df[[ycol]], na.rm=T))
+      
+      # ---- Surface water depth/WSE traces ----
       for (s in sites_stage$code) {
         df_s <- base_df |> filter(code == s)
         
-        # Depth trace
         p <- add_trace(
           p,
           x = df_s$timestamp,
-          y = df_s$depth,
+          y = df_s[[ycol]],
           type = "scatter",
           mode = "lines",
           name = paste0(site_labels[[s]], ", ", site_descrips[[s]]),
-          legendgroup = "channel", # s,
+          legendgroup = "channel",
           line = list(dash = "solid", color = site_colors[s]),
-          text = paste(site_labels[[s]], "\nDepth", sprintf("%.1f ft", df_s$depth)),
+          text = paste(
+            site_labels[[s]],
+            tm$label,
+            tm$fmt(df_s[[ycol]])
+          ),
           hoverinfo = "text+x",
           connectgaps = FALSE,
           yaxis = "y"
@@ -449,9 +562,10 @@ server <- function(input, output, session) {
           showticklabels = TRUE
         ),
         yaxis = list(
-          title = "Depth (ft)",
+          title = tm$label,
           domain = c(0.5, 1),
-          fixedrange = TRUE
+          fixedrange = TRUE,
+          range = c(min_y, max_y)
         ),
         yaxis2 = list(
           title = "Temperature (°F)",
@@ -468,7 +582,7 @@ server <- function(input, output, session) {
         ),
         margin = list(t = 40, b = 60, l = 60, r = 20)
       )
-    
+  
   }  else if(top_metric()$col %in% c("gw_depth_ft", "gwe_ft_navd88")) {
       
       base_df <- filtered_df()
@@ -480,19 +594,14 @@ server <- function(input, output, session) {
       
       placeholder_value <- mean(base_df[[ycol]], na.rm=T)
       
-      # min_lake <- 1318.257 + 3.4 # zero rumsey to NAVD88
-      # min_lake <- 1320.74 # as defined on USGS Clear Lake Lakeport gage
-      # max_lake <- min_lake + 7.56
       min_y <- switch(input$top_metric,
                       "gw_depth_ft" = max(base_df[[ycol]], na.rm=T),
-                      "gse_ft_navd88" = min(base_df[[ycol]], na.rm=T) )
+                      "gse_ft_navd88" = min(base_df[[ycol]], na.rm=T))
+      message("!!!", min(base_df[[ycol]], na.rm=T))
       max_y <- switch(input$top_metric,
-                      "gw_depth_ft" = 0,
+                      "gw_depth_ft" = min(0, base_df[[ycol]], na.rm=T),
                       "gse_ft_navd88" = max(base_df[[ycol]], na.rm=T))
-      
-      p <- plot_ly() |>
-        config(displayModeBar = TRUE)
-      
+
       for (s in sites_piezo$code) {
         df_s <- base_df |> filter(code == s)
         has_data <- nrow(df_s) > 0 && any(!is.na(df_s[[ycol]]))
