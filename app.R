@@ -297,7 +297,7 @@ server <- function(input, output, session) {
   
   df_pivot <- reactive({
     ts_data() |>
-      inner_join(sites |> select(code, category), by = join_by(code, category)) |>
+      inner_join(sites |> select(code, category)) |>
       filter(parm_name %in% c("Depth", "Temperature")) |>
       mutate(parm_name_modified = case_when(
         parm_name == "Temperature" & type == "vulink" ~ "Air Temperature",
