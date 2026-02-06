@@ -51,6 +51,7 @@ message(
 ## DATA DEFINITIONS =============================================================
 
 empty_ts_schema <- tibble(
+  category = factor(),
   code = character(),
   site = character(),
   name = character(),
@@ -297,7 +298,7 @@ server <- function(input, output, session) {
   
   df_pivot <- reactive({
     ts_data() |>
-      inner_join(sites |> select(code, category), by = join_by(code)) |>
+      inner_join(sites |> select(code, category), by = join_by(code, category)) |>
       filter(parm_name %in% c("Depth", "Temperature")) |>
       mutate(parm_name_modified = case_when(
         parm_name == "Temperature" & type == "vulink" ~ "Air Temperature",
@@ -325,6 +326,16 @@ server <- function(input, output, session) {
       # correct piezometer for well depth and calculate piezometer GWE
       inner_join(sensors |> filter(type == "troll") |> select(code, name), by = join_by(code)) |>
       left_join(piezo_meta |> select(name, gse_ft_navd88, tdx_ft_navd88), by = join_by(name)) |>
+      # smooth spikes of length one in groundwater depth, eliminate other spikes
+      group_by(category, site) |>
+      mutate(depth = if_else(category == "Piezometer",
+                             case_when((timestamp == min(timestamp)) ~ lead(depth),
+                                       (abs(depth - lag(depth)) > 3) & (abs(depth - lead(depth)) > 3) ~ (lag(depth) + lead(depth)) / 2,
+                                       (depth > 18) ~ NA,
+                                       TRUE ~ depth),
+                             depth)) |>
+      ungroup() |>
+      # calculate groundwater elevation
       mutate(gwe_ft_navd88 = if_else(category == "Piezometer",
                                      tdx_ft_navd88 + depth,
                                      NA),
