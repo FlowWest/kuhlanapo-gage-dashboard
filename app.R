@@ -34,6 +34,12 @@ cache_data_file_lakelevel <- file.path(usgs_cache_dir, "usgs_lake_level_11450000
 cache_lock_file_lakelevel <- file.path(usgs_cache_dir, "refresh.lock")
 rds_url_lakelevel <- "https://github.com/flowwest/kuhlanapo-gage-dashboard/raw/main/data/usgs_lake_level_11450000.rds"
 
+nasa_cache_dir <- file.path(getwd(), ".cache", "nasa")
+dir.create(nasa_cache_dir, recursive = TRUE, showWarnings = FALSE)
+cache_data_file_precip <- file.path(usgs_cache_dir, "precip_ts.rds")
+cache_lock_file_precip <- file.path(usgs_cache_dir, "refresh.lock")
+rds_url_precip <- "https://github.com/flowwest/kuhlanapo-gage-dashboard/raw/main/data/precip_ts.rds"
+
 FORCE_LOCAL <- T
 
 message(
@@ -228,8 +234,8 @@ ui <- fluidPage(
     dateRangeInput(
       "date_range",
       label = "",
-      start = Sys.Date() - 30,
-      end = Sys.Date(),
+      start = as.Date("2025-12-06"), # Sys.Date() - 30,
+      end = as.Date("2026-02-06"), # Sys.Date(),
       min = as.Date("2025-12-06"),
       max = Sys.Date()
     ),
@@ -333,6 +339,11 @@ server <- function(input, output, session) {
   
   ll_data <- reactive({
     
+    if((file.exists(here::here("data/usgs_lake_level-11450000.rds"))) && FORCE_LOCAL) {
+      message("FORCE_LOCAL is on; using data/usgs_lake_level-11450000.rds locally")
+      return(readRDS(here::here("data/usgs_lake_level-11450000.rds")))
+    }
+
     if (!file.exists(cache_data_file_lakelevel)) {
       message("[cache:bootstrap] no cache → downloading initial copy")
       download.file(rds_url_lakelevel, cache_data_file_lakelevel, mode = "wb", quiet = TRUE)
@@ -343,6 +354,30 @@ server <- function(input, output, session) {
     if (cache_is_stale(cache_data_file_lakelevel)) {
       message("[cache:decision] cache is stale → triggering async refresh")
       refresh_cache_async(cache_lock_file_lakelevel, rds_url_lakelevel)
+    } else {
+      message("[cache:decision] cache is fresh → no refresh")
+    }
+    
+    df
+  })
+  
+  precip_data <- reactive({
+
+    if((file.exists(here::here("data/precip_ts.rds"))) && FORCE_LOCAL) {
+      message("FORCE_LOCAL is on; using data/precip_ts.rds locally")
+      return(readRDS(here::here("data/precip_ts.rds")))
+    }
+    
+    if (!file.exists(cache_data_file_precip)) {
+      message("[cache:bootstrap] no cache → downloading initial copy")
+      download.file(rds_url_precip, cache_data_file_precip, mode = "wb", quiet = TRUE)
+    }
+    
+    df <- read_cached_data(cache_data_file_precip)
+    
+    if (cache_is_stale(cache_data_file_precip)) {
+      message("[cache:decision] cache is stale → triggering async refresh")
+      refresh_cache_async(cache_lock_file_precip, rds_url_precip)
     } else {
       message("[cache:decision] cache is fresh → no refresh")
     }
@@ -406,14 +441,22 @@ server <- function(input, output, session) {
                                    gse_ft_navd88 - gwe_ft_navd88,
                                    NA)
              ) |>
-      select(-name, -gse_ft_navd88, -tdx_ft_navd88) |>
-      # join the lake level data
-      glimpse()
-    
+      select(-name, -gse_ft_navd88, -tdx_ft_navd88)
     })
   
   filtered_df <- reactive({
     df <- df_pivot()
+    req(df)
+    
+    start_ts <- as.POSIXct(input$date_range[1], tz = "America/Los_Angeles")
+    end_ts   <- as.POSIXct(input$date_range[2], tz = "America/Los_Angeles") +
+      hours(23) + minutes(59) + seconds(59)
+    
+    df |> filter(timestamp >= start_ts, timestamp <= end_ts)
+  })
+
+  filtered_precip_df <- reactive({
+    df <- precip_data()
     req(df)
     
     start_ts <- as.POSIXct(input$date_range[1], tz = "America/Los_Angeles")
@@ -460,6 +503,9 @@ server <- function(input, output, session) {
     
     min_lake <- 1320.74 # as defined on USGS Clear Lake Lakeport gage
     max_lake <- min_lake + 7.56
+    
+    precip_df <- filtered_precip_df() |> 
+      filter(site == "KPD")
     
     if (ycol %in% c("wse_ft_navd88", "gwe_ft_navd88") & "lake_level" %in% names(base_df)) {
       
@@ -584,50 +630,7 @@ server <- function(input, output, session) {
         )
       }
       
-      # ---- Layout with dynamic vertical sizing ----
-      p |> layout(
-        dragmode = "zoom",
-        xaxis = list(
-          title = "",
-          domain = c(0, 1),
-          side = "top",
-          showspikes = TRUE
-        ),
-        xaxis2 = list(
-          overlaying = "x",
-          side = "top",
-          showticklabels = TRUE
-        ),
-        yaxis = list(
-          title = tm$label,
-          domain = c(0.5, 1),
-          fixedrange = TRUE,
-          range = c(min_y, max_y)
-        ),
-        yaxis2 = list(
-          title = "Temperature (°F)",
-          domain = c(0, 0.5),
-          fixedrange = TRUE
-        ),
-        legend = list(
-          orientation = "h",
-          x = 0.5,
-          yref = "container",
-          xanchor = "center",
-          y = 0,
-          automargin = TRUE
-        ),
-        margin = list(t = 40, b = 60, l = 60, r = 20)
-      )
-  
   }  else if(top_metric()$col %in% c("gw_depth_ft", "gwe_ft_navd88")) {
-      
-      base_df <- filtered_df()
-      req(nrow(base_df) > 0)
-      
-      # ---- Depth traces ----
-      tm <- top_metric()
-      ycol <- tm$col
       
       placeholder_value <- mean(base_df[[ycol]], na.rm=T)
       
@@ -662,33 +665,72 @@ server <- function(input, output, session) {
           #visible = if (has_data) TRUE else "legendonly"
         )
       }
-      
-      # ---- Layout with dynamic vertical sizing ----
-      p |> layout(
-        dragmode = "zoom",
-        xaxis = list(
-          title = "",
-          domain = c(0, 1),
-          side = "top",
-          showspikes = TRUE
-        ),
-        yaxis = list(
-          title = tm$label,
-          domain = c(0, 1),
-          fixedrange = TRUE,
-          range = c(min_y, max_y)
-        ),
-        legend = list(
-          orientation = "h",
-          x = 0.5,
-          yref = "container",
-          xanchor = "center",
-          y = 0,
-          automargin = TRUE
-        ),
-        margin = list(t = 40, b = 60, l = 60, r = 20)
-      )
-  }
+      }
+    
+    p <- add_trace(
+      p,
+      x = precip_df$timestamp,           # left edge of the bar
+      y = precip_df$precip_in,
+      type = "bar",
+      name = "Precipitation",
+      legendgroup = "precip",
+      text = NULL,                       # remove bar labels
+      hovertext = paste0(
+        "Precipitation: ", sprintf("%.2f in/hr", precip_df$precip_in), "<br>",
+        "Timestamp: ", format(precip_df$timestamp, "%Y-%m-%d %H:%M")
+      ),
+      hoverinfo = "text",
+      marker = list(color = "rgba(64,64,64,0.5)"),
+      width = 3600 * 1000,               # 1 hour in ms
+      yaxis = "y3",
+      offset = 0                         # align left side of bar with x
+    )
+    
+  # ---- Layout with dynamic vertical sizing ----
+  p |> layout(
+    dragmode = "zoom",
+    xaxis = list(
+      title = "",
+      domain = c(0, 1),
+      side = "top",
+      showspikes = TRUE
+    ),
+    xaxis2 = list(
+      overlaying = "x",
+      side = "top",
+      showticklabels = TRUE
+    ),
+    xaxis0 = list(
+      overlaying = "x",
+      side = "top",
+      showticklabels = TRUE
+    ),
+    yaxis = list(
+      title = tm$label,
+      domain = if(top_metric()$col %in% c("gw_depth_ft", "gwe_ft_navd88")) c(0, 0.85) else c(0.3, 0.85),
+      fixedrange = TRUE,
+      range = c(min_y, max_y)
+    ),
+    yaxis2 = list(
+      title = "Temperature (°F)",
+      domain = c(0, 0.3),
+      fixedrange = TRUE
+    ),
+    yaxis3 = list(
+      title = "Hourly Precip (in)",
+      domain = c(0.9, 1.0),
+      fixedrange = TRUE
+    ),
+    legend = list(
+      orientation = "h",
+      x = 0.5,
+      yref = "container",
+      xanchor = "center",
+      y = 0,
+      automargin = TRUE
+    ),
+    margin = list(t = 40, b = 60, l = 60, r = 20)
+  )
   
  })
   
