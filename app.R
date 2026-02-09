@@ -245,7 +245,25 @@ ui <- fluidPage(
       ),
       selected = "depth",
       size = "sm"
+    ),
+    
+    conditionalPanel(
+      condition = "input.top_metric == 'gw_depth_ft' || input.top_metric == 'gwe_ft_navd88'",
+      
+      shinyWidgets::radioGroupButtons(
+        "transect_select",
+        label = "",
+        choices = c(
+          "All Transects" = "all",
+          "Transect A" = "A",
+          "Transect B" = "B",
+          "Transect C" = "C"
+        ),
+        selected = "all",
+        size = "sm"
+      )
     )
+    
   ),
   
   fluidRow(
@@ -412,6 +430,24 @@ server <- function(input, output, session) {
       ungroup()
   })
   
+  sites_piezo_filtered <- reactive({
+    
+    req(sites_piezo)
+    
+    transect_map <- list(
+      A = c("PZ-A1", "PZ-A2", "PZ-A3"),
+      B = c("PZ-B1", "PZ-B2", "PZ-B3", "PZ-B4"),
+      C = c("PZ-B2", "PZ-C1", "PZ-C2", "PZ-C3")
+    )
+    
+    if (is.null(input$transect_select) || input$transect_select == "all") {
+      return(sites_piezo)
+    }
+    
+    sites_piezo |> 
+      filter(code %in% transect_map[[input$transect_select]])
+  })
+  
   output$combined_plot <- renderPlotly({ 
     
     p <- plot_ly() |>
@@ -452,7 +488,8 @@ server <- function(input, output, session) {
         type = "scatter",
         mode = "none",         # no line markers
         fill = "tonexty",      # fill area down to y=0
-        fillcolor = "rgba(0,0,255,0.2)",  # semi-transparent blue
+       #  fillcolor = "rgba(0,0,255,0.2)",  # semi-transparent blue
+        fillcolor = "rgba(0,0,0,0.2)",
         name = "Lake Level (USGS)",
         legendgroup = "lake_level",
         text = paste0("Lake Level (ft NAVD88): ", sprintf("%.2f", df_ll_plot$lake_level)),
@@ -465,7 +502,7 @@ server <- function(input, output, session) {
         y = c(max_lake, max_lake),
         type = "scatter",
         mode = "lines",
-        line = list(dash = "dash", color = "rgba(0,0,255,0.2)"),
+        line = list(dash = "dash", color = "rgba(0,0,0,0.2)"),
         hoverinfo = "text",
         name = "Full Lake",
         legendgroup = "lake_level",
@@ -597,12 +634,11 @@ server <- function(input, output, session) {
       min_y <- switch(input$top_metric,
                       "gw_depth_ft" = max(base_df[[ycol]], na.rm=T),
                       "gse_ft_navd88" = min(base_df[[ycol]], na.rm=T))
-      message("!!!", min(base_df[[ycol]], na.rm=T))
       max_y <- switch(input$top_metric,
                       "gw_depth_ft" = min(0, base_df[[ycol]], na.rm=T),
                       "gse_ft_navd88" = max(base_df[[ycol]], na.rm=T))
 
-      for (s in sites_piezo$code) {
+      for (s in sites_piezo_filtered()$code) {
         df_s <- base_df |> filter(code == s)
         has_data <- nrow(df_s) > 0 && any(!is.na(df_s[[ycol]]))
         
