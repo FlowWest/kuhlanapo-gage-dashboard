@@ -676,8 +676,8 @@ server <- function(input, output, session) {
       legendgroup = "precip",
       text = NULL,                       # remove bar labels
       hovertext = paste0(
-        "Precipitation: ", sprintf("%.2f in/hr", precip_df$precip_in), "<br>",
-        "Timestamp: ", format(precip_df$timestamp, "%Y-%m-%d %H:%M")
+        format(precip_df$timestamp, "%b %d, %Y %H:%M"), " - ", format(precip_df$timestamp  + lubridate::hours(1), "%b %d, %Y %H:%M"), "<br>",
+        "Precipitation: ", sprintf("%.2f in", precip_df$precip_in)
       ),
       hoverinfo = "text",
       marker = list(color = "rgba(64,64,64,0.5)"),
@@ -697,17 +697,15 @@ server <- function(input, output, session) {
     ),
     xaxis2 = list(
       overlaying = "x",
-      side = "top",
-      showticklabels = TRUE
+      side = "top"
     ),
-    xaxis0 = list(
+    xaxis3 = list(
       overlaying = "x",
-      side = "top",
-      showticklabels = TRUE
+      side = "top"
     ),
     yaxis = list(
       title = tm$label,
-      domain = if(top_metric()$col %in% c("gw_depth_ft", "gwe_ft_navd88")) c(0, 0.85) else c(0.3, 0.85),
+      domain = if(top_metric()$col %in% c("gw_depth_ft", "gwe_ft_navd88")) c(0, 0.825) else c(0.3, 0.825),
       fixedrange = TRUE,
       range = c(min_y, max_y)
     ),
