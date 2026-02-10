@@ -3,8 +3,8 @@ library(tidyverse)
 sites <- tribble(
   ~category,    ~code,   ~site,                 ~site_label,                  ~site_descrip,                    ~twg_elev,
   "Stage Gage", "MC-01", "Lower Manning Creek", "Manning Creek West Branch",  "5400 ft DS Soda Bay Rd",         1327.83,   
-  "Stage Gage", "MC-03", "Upper Manning Creek", "Manning Creek Mainstem",     "3800 ft DS Soda Bay Rd",         1329.63,   
-  "Stage Gage", "MC-02", "Secondary Channel",   "Secondary Channel",          "4300 ft DS Soda Bay Rd",         1331.55,   
+  "Stage Gage", "MC-03", "Upper Manning Creek", "Manning Creek Mainstem",     "3800 ft DS Soda Bay Rd",         1329.39,   
+  "Stage Gage", "MC-02", "Secondary Channel",   "Secondary Channel",          "4300 ft DS Soda Bay Rd",         1331.89,   
   "Piezometer", "PZ-A1", "Piezometer A1",       "Piezometer A1",              "E, 300 ft S of Clear Lake",   NA,        
   "Piezometer", "PZ-A2", "Piezometer A2",       "Piezometer A2",              "E, 1000 ft S of Clear Lake",  NA,        
   "Piezometer", "PZ-A3", "Piezometer A3",       "Piezometer A3",              "E, 2000 ft S of Clear Lake",  NA,        
@@ -75,7 +75,7 @@ piezo_colors <- tribble(
   "PZ-B4", "#d2e0ff", 
   "PZ-C1", "#47d09c", 
   "PZ-C2", "#acf186", 
-  "PZ-C3", "#fcffaa", 
+  "PZ-C3", "#e2e592", 
 ) |> deframe()
 
 piezo_meta <- tribble(
@@ -92,4 +92,51 @@ piezo_meta <- tribble(
   "2025PZC03",  1333.552,        1327.207,
 ) 
 
-
+match_lab_lightness <- function(in_color,
+                                template_color = NULL,
+                                out_L = NULL) {
+  
+  if (!requireNamespace("colorspace", quietly = TRUE)) {
+    stop("Package 'colorspace' is required.")
+  }
+  
+  # Input validation
+  if (is.null(template_color) && is.null(out_L)) {
+    stop("Supply either 'template_color' or 'out_L'.")
+  }
+  if (!is.null(template_color) && !is.null(out_L)) {
+    stop("Supply only one of 'template_color' or 'out_L', not both.")
+  }
+  
+  # Convert input color to LAB
+  lab_in <- as(
+    colorspace::hex2RGB(in_color),
+    "LAB"
+  )@coords
+  
+  # Determine target L*
+  if (!is.null(template_color)) {
+    lab_template <- as(
+      colorspace::hex2RGB(template_color),
+      "LAB"
+    )@coords
+    target_L <- lab_template[1]
+  } else {
+    target_L <- out_L
+  }
+  
+  # Replace L*, preserve a* and b*
+  lab_out <- lab_in
+  lab_out[1] <- target_L
+  
+  # Convert back to hex
+  hex_out <- colorspace::hex(
+    colorspace::LAB(
+      L = lab_out[1],
+      A = lab_out[2],
+      B = lab_out[3]
+    )
+  )
+  
+  return(hex_out)
+}
