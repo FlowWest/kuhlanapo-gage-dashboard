@@ -10,8 +10,8 @@ prep_idw_grid <- function(
     nx = 100,
     ny = 100,
     power = 3,
-    pad = 0.2,
-    radius = 5280 / 2
+    pad = 0,
+    radius = 2000
 ) {
   stopifnot(all(c("id","x","y","type") %in% names(sites_df)))
   sites_df$id <- as.character(sites_df$id)
@@ -48,11 +48,7 @@ prep_idw_grid <- function(
   # raw inverse-distance weights
   w_raw <- 1 / (dist^power)
   
-  # smooth radial decay
-  # radial_decay <- exp(-(dist / radius_sigma)^2)
   radial_decay <- pmax(0, 1 - dist / radius)
-  
-  # hard cutoff
   radial_decay[dist > radius] <- 0
   
   w_raw <- w_raw * radial_decay
@@ -246,17 +242,28 @@ out_grid <- idw_obj$grid |>
   mutate(value = as.numeric(out))
 
 ggplot(out_grid, aes(x = x, y = y)) +
-  geom_raster(aes(fill = value), interpolate = TRUE) +
-  geom_contour(aes(z = value),
-               color = "black",
-               linewidth = 0.3,
-               bins = 10,
+  # geom_raster(aes(fill = value), interpolate = TRUE) +
+  geom_contour(aes(z = value, color = after_stat(level)),
+               linewidth = 1,
+               binwidth = 1,
                na.rm = TRUE)  +
-  geom_point(data=sites_df) +
+  metR::geom_label_contour(aes(z = value, label = after_stat(level), color = after_stat(level)),
+               binwidth = 1,
+               skip = 0,
+               size = 8 / .pt,
+               na.rm = TRUE)  +
+  geom_point(data=sites_df, aes(fill = id), size = 6, shape = 21) +
+  geom_text(data=sites_df, aes(label = substr(id, 4, 5)), size = 8 / .pt) +
   coord_equal() +
-  scale_fill_viridis_c(
-    name = "Interpolated\nValue",
-    na.value = "transparent"
-  ) +
-  theme_minimal()
+  #scale_fill_continuous(
+  #  name = "Interpolated\nValue",
+  #  na.value = "transparent"
+  #) +
+  scale_fill_manual(name = "", values = piezo_colors) +
+  scale_color_viridis_c(name = "ft NAVD88") +
+  theme_minimal() +
+  theme(panel.grid = element_blank(),
+        axis.ticks = element_blank(),
+        axis.text = element_blank(),
+        axis.title = element_blank())
 
