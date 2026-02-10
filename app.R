@@ -44,6 +44,8 @@ FORCE_LOCAL <- T
 
 ZERO_RUMSEY_NAVD88 <- 1320.74
 
+idw_obj <- readRDS(here::here("data-raw", "idw_precomputed.rds"))
+
 message(
   sprintf(
     "[cache:init] dir=%s | ttl=%s sec (%.1f hrs) | forced_refresh=07:30 PT",
@@ -249,7 +251,8 @@ ui <- fluidPage(
         "Depth" = "depth",
         "Water Surface" = "wse_ft_navd88",
         "GW Elev" = "gwe_ft_navd88",
-        "GW Depth" = "gw_depth_ft"
+        "GW Depth" = "gw_depth_ft",
+        "GW Contour" = "gw_contour"
       ),
       selected = "depth",
       size = "sm"
@@ -270,17 +273,34 @@ ui <- fluidPage(
         selected = "all",
         size = "sm"
       )
-    )
+    ),
     
+    conditionalPanel(
+      condition = "input.top_metric == 'gw_contour'",
+      sliderInput(
+        "gw_time",
+        "",
+        min = as.POSIXct("2025-12-09 00:00", tz = "America/Los_Angeles"), 
+        max = as.POSIXct("2026-02-03 23:59", tz = "America/Los_Angeles"),
+        value = as.POSIXct("2026-01-01 00:00", tz = "America/Los_Angeles"),
+        timeFormat = "%Y-%m-%d %H:%M",
+        step = 3600, # 1 hour steps
+        animate = animationOptions(interval = 1000, loop = TRUE)
+      )
+    )
   ),
   
   fluidRow(
     column(
       12,
-      if (!INTERACTIVE)
-        plotOutput("combined_plot", height = "90vh")
-      else
+      conditionalPanel(
+        condition = "input.top_metric == 'gw_contour'",
+        plotOutput("gw_contour_plot", height = "80vh")
+      ),
+      conditionalPanel(
+        condition = "input.top_metric != 'gw_contour'",
         plotlyOutput("combined_plot", height = "90vh")
+      )
     )
   )
 )
@@ -313,6 +333,19 @@ server <- function(input, output, session) {
         fmt   = function(x) sprintf("%.2f", x)
       )
     )
+  })
+  
+  # Slider for GW Contour time
+  gw_contour_time <- reactive({
+    if(input$top_metric != "gw_contour") return(NULL)
+    
+    df <- filtered_df()
+    req(nrow(df) > 0)
+    
+    slider_min <- min(df$timestamp, na.rm = TRUE)
+    slider_max <- max(df$timestamp, na.rm = TRUE)
+    
+    input$gw_contour_t0 %||% slider_min
   })
   
   ts_data <- reactive({
@@ -790,6 +823,53 @@ server <- function(input, output, session) {
   do.call(layout, c(list(p), layout_args))
   
  })
+  
+  # Reactive: IDW interpolation at selected time
+  gw_contour_df <- reactive({
+    req(input$gw_time)
+    df <- df_pivot() |> 
+      filter(category == "Piezometer") |> 
+      transmute(code, timestamp, value = gwe_ft_navd88)
+    req(nrow(df) > 0)
+    
+    # Call IDW function
+    out <- interpolate_idw_at_time(idw_obj, df, t0 = input$gw_time, return_matrix=F) 
+    
+    idw_obj$grid |>
+      mutate(value = as.numeric(out))
+    
+  })
+  
+  # Output: GW Contour ggplot
+  output$gw_contour_plot <- renderPlot({
+    req(gw_contour_df())
+    
+    gw_contour_df() |>
+    ggplot(aes(x = x, y = y)) +
+      geom_contour(aes(z = value, color = after_stat(level)),
+                   linewidth = 1,
+                   binwidth = 1,
+                   na.rm = TRUE)  +
+      metR::geom_label_contour(aes(z = value, label = after_stat(level), color = after_stat(level)),
+                               binwidth = 1,
+                               skip = 0,
+                               size = 12 / .pt,
+                               na.rm = TRUE)  +
+      geom_point(data=idw_obj$sites, aes(fill = id), size = 12, shape = 21) +
+      geom_text(data=idw_obj$sites, aes(label = substr(id, 4, 5)), size = 12 / .pt) +
+      coord_equal(xlim = c(min(gw_contour_df()$x), max(gw_contour_df()$x)),
+                  ylim = c(min(gw_contour_df()$y), max(gw_contour_df()$y))) +
+      scale_fill_manual(name = "", values = piezo_colors) +
+      scale_color_viridis_c(name = "ft NAVD88",
+                            limits = c(min(df_pivot()$gwe_ft_navd88, na.rm = T), 
+                                       max(df_pivot()$gwe_ft_navd88, na.rm = T))) +
+      theme_minimal() +
+      theme(panel.grid = element_blank(),
+           axis.ticks = element_blank(),
+           axis.text = element_blank(),
+           axis.title = element_blank(),
+           legend.position = "none")
+  })
   
 }
 
