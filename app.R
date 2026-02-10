@@ -234,8 +234,8 @@ ui <- fluidPage(
     dateRangeInput(
       "date_range",
       label = "",
-      start = as.Date("2025-12-06"), # Sys.Date() - 30,
-      end = as.Date("2026-02-06"), # Sys.Date(),
+      start = as.Date("2025-12-09"), # Sys.Date() - 30,
+      end = as.Date("2026-02-03"), # Sys.Date(),
       min = as.Date("2025-12-06"),
       max = Sys.Date()
     ),
