@@ -42,6 +42,8 @@ rds_url_precip <- "https://github.com/flowwest/kuhlanapo-gage-dashboard/raw/main
 
 FORCE_LOCAL <- T
 
+ZERO_RUMSEY_NAVD88 <- 1320.74
+
 message(
   sprintf(
     "[cache:init] dir=%s | ttl=%s sec (%.1f hrs) | forced_refresh=07:30 PT",
@@ -636,10 +638,10 @@ server <- function(input, output, session) {
       
       min_y <- switch(input$top_metric,
                       "gw_depth_ft" = max(base_df[[ycol]], na.rm=T),
-                      "gse_ft_navd88" = min(base_df[[ycol]], na.rm=T))
+                      "gwe_ft_navd88" = min(base_df[[ycol]], na.rm=T))
       max_y <- switch(input$top_metric,
                       "gw_depth_ft" = min(0, base_df[[ycol]], na.rm=T),
-                      "gse_ft_navd88" = max(base_df[[ycol]], na.rm=T))
+                      "gwe_ft_navd88" = max(base_df[[ycol]], na.rm=T))
 
       for (s in sites_piezo_filtered()$code) {
         df_s <- base_df |> filter(code == s)
@@ -647,7 +649,7 @@ server <- function(input, output, session) {
         
         p <- add_trace(
           p,
-          x = if (has_data) df_s$timestamp else Sys.time(),
+          x = if (has_data) df_s$timestamp else input$date_range[2],
           y = if (has_data) df_s[[ycol]] else placeholder_value,
           type = "scatter",
           mode = "lines",
@@ -686,8 +688,61 @@ server <- function(input, output, session) {
       offset = 0                         # align left side of bar with x
     )
     
+    y_domain <- if (top_metric()$col %in% c("gw_depth_ft", "gwe_ft_navd88")) {
+      c(0, 0.825)
+    } else {
+      c(0.3, 0.825)
+    }
+    
+  # add secondary Rumsey axis where relevant
+    if (ycol %in% c("wse_ft_navd88", "gwe_ft_navd88")) {
+      
+      if (is.infinite(min_y) || is.infinite(max_y) || is.na(min_y) || is.na(max_y)) {
+        min_y <- min(base_df[[ycol]], na.rm = TRUE)
+        max_y <- max(base_df[[ycol]], na.rm = TRUE)
+      }
+      
+    # rumsey_ticks <- c(seq(0, 10), 7.56)
+    rumsey_ticks <- c(pretty(c(min_y, max_y)) - ZERO_RUMSEY_NAVD88, 7.56)
+      
+    rumsey_axis <- list(
+      title = "Rumsey Elevation (ft)",
+      overlaying = "y",
+      side = "right",
+      anchor = "x",
+      domain = y_domain,
+      range = c(min_y, max_y),
+      position = 0.98,
+      tickvals = rumsey_ticks + ZERO_RUMSEY_NAVD88,
+      ticktext = as.character(sprintf("%.2f", rumsey_ticks)),
+      fixedrange = TRUE,
+      showticklabels = TRUE,
+      showline = TRUE,
+      automargin = TRUE
+    )
+
+  } else {
+    rumsey_axis <- NULL
+  }
+    
+  # add dummy trace so rumsey axis appears
+    if (!is.null(rumsey_axis)) {
+      p <- add_trace(
+        p,
+        x = base_df$timestamp[1],
+        y = base_df[[ycol]][1],
+        type = "scatter",
+        mode = "lines",
+        line = list(color = "rgba(0,0,0,0)"),
+        showlegend = FALSE,
+        hoverinfo = "none",
+        yaxis = "y4"
+      )
+    }
+    
+    
   # ---- Layout with dynamic vertical sizing ----
-  p |> layout(
+  layout_args <- list(
     dragmode = "zoom",
     xaxis = list(
       title = "",
@@ -705,7 +760,7 @@ server <- function(input, output, session) {
     ),
     yaxis = list(
       title = tm$label,
-      domain = if(top_metric()$col %in% c("gw_depth_ft", "gwe_ft_navd88")) c(0, 0.825) else c(0.3, 0.825),
+      domain = y_domain,
       fixedrange = TRUE,
       range = c(min_y, max_y)
     ),
@@ -727,8 +782,12 @@ server <- function(input, output, session) {
       y = 0,
       automargin = TRUE
     ),
-    margin = list(t = 40, b = 60, l = 60, r = 20)
+    margin = list(t = 40, b = 60, l = 60, r = if (!is.null(rumsey_axis)) 60 else 20)
   )
+    
+  if (!is.null(rumsey_axis)) layout_args$yaxis4 <- rumsey_axis
+  
+  do.call(layout, c(list(p), layout_args))
   
  })
   
