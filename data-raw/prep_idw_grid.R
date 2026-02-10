@@ -273,3 +273,6 @@ ggplot(out_grid, aes(x = x, y = y)) +
         axis.text = element_blank(),
         axis.title = element_blank())
 
+bnd <- read_sf(here::here("data-raw", "kuulanapo_bnd.shp.zip")) 
+st_coordinates(bnd$geometry)[, c("X", "Y")] |> 
+  saveRDS(here::here("data", "kuhlanapo_bnd.rds"))

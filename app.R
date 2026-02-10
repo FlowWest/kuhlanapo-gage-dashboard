@@ -45,6 +45,7 @@ FORCE_LOCAL <- T
 ZERO_RUMSEY_NAVD88 <- 1320.74
 
 idw_obj <- readRDS(here::here("data-raw", "idw_precomputed.rds"))
+kuhlanapo_bnd <- readRDS(here::here("data", "kuhlanapo_bnd.rds"))
 
 message(
   sprintf(
@@ -846,6 +847,7 @@ server <- function(input, output, session) {
     
     gw_contour_df() |>
     ggplot(aes(x = x, y = y)) +
+      geom_polygon(data = kuhlanapo_bnd, aes(x = X, y = Y), fill = "#eeeeee") +
       geom_contour(aes(z = value, color = after_stat(level)),
                    linewidth = 1,
                    binwidth = 1,
@@ -859,6 +861,8 @@ server <- function(input, output, session) {
       geom_text(data=idw_obj$sites, aes(label = substr(id, 4, 5)), size = 12 / .pt) +
       coord_equal(xlim = c(min(gw_contour_df()$x), max(gw_contour_df()$x)),
                   ylim = c(min(gw_contour_df()$y), max(gw_contour_df()$y))) +
+      scale_y_continuous(expand = expansion(add = c(400, 1200))) +
+      scale_x_continuous(expand = expansion(add = c(400, 400))) +
       scale_fill_manual(name = "", values = piezo_colors) +
       scale_color_viridis_c(name = "ft NAVD88",
                             limits = c(min(df_pivot()$gwe_ft_navd88, na.rm = T), 
