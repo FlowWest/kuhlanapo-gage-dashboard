@@ -61,6 +61,8 @@ prep_idw_grid <- function(
   #   terrain_z <- as.numeric(ex)
   # }
   
+  min_dist <- apply(dist, 1, min)
+  
   idw_obj <- list(
     grid = grid,
     x = gx,
@@ -69,7 +71,8 @@ prep_idw_grid <- function(
     # terrain_z = terrain_z,
     dims = c(nx, ny),
     sites = sites_df,
-    power = power
+    power = power,
+    min_dist = min_dist
   )
   
   idw_obj
@@ -165,7 +168,8 @@ interpolate_idw_at_time <- function(
     idw_obj,
     ts_data,
     t0,
-    return_matrix = TRUE
+    return_matrix = TRUE,
+    clip_distance = 1000
 ) {
   sites_df <- idw_obj$sites
   site_ids <- as.character(sites_df$id)
@@ -225,6 +229,8 @@ interpolate_idw_at_time <- function(
   z_grid <- numer / denom
   z_grid[is.nan(z_grid)] <- NA_real_
   
+  z_grid[idw_obj$min_dist > clip_distance] <- NA_real_
+  
   # ---- 4. Return ----
   if (return_matrix) {
     matrix(z_grid, nrow = dims[1], ncol = dims[2], byrow = FALSE)
@@ -235,7 +241,7 @@ interpolate_idw_at_time <- function(
 
 out <- interpolate_idw_at_time(idw_obj, 
                                ts_data, 
-                               as.POSIXct("2026-01-15 18:00", tz = "America/Los_Angeles"),
+                               as.POSIXct("2025-12-31 24:00", tz = "America/Los_Angeles"),
                                return_matrix = F) 
 
 out_grid <- idw_obj$grid |>
