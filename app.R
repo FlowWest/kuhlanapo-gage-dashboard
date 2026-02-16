@@ -40,7 +40,7 @@ cache_data_file_precip <- file.path(usgs_cache_dir, "precip_ts.rds")
 cache_lock_file_precip <- file.path(usgs_cache_dir, "refresh.lock")
 rds_url_precip <- "https://github.com/flowwest/kuhlanapo-gage-dashboard/raw/main/data/precip_ts.rds"
 
-FORCE_LOCAL <- T
+FORCE_LOCAL <- F
 
 ZERO_RUMSEY_NAVD88 <- 1320.74
 
@@ -410,12 +410,12 @@ server <- function(input, output, session) {
     
     if (!file.exists(cache_data_file_hydrovu)) {
       message("[cache:bootstrap] no cache → downloading initial copy")
-      download.file(rds_url, cache_data_file_hydrovu, mode = "wb", quiet = TRUE)
+      download.file(rds_url_hydrovu, cache_data_file_hydrovu, mode = "wb", quiet = TRUE)
     }
     
     df <- read_cached_data(cache_data_file_hydrovu)
     
-    if (cache_is_stale()) {
+    if (cache_is_stale(cache_data_file_hydrovu)) {
       message("[cache:decision] cache is stale → triggering async refresh")
       refresh_cache_async(cache_lock_file_hydrovu, rds_url_hydrovu)
     } else {
