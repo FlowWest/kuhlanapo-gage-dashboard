@@ -2,7 +2,7 @@
 library(terra)
 library(tidyverse)
 library(sf)
-
+source(here::here("global.R"))
 # STEP 1 PREP IDW GRID
 
 prep_idw_grid <- function(
@@ -163,81 +163,6 @@ ts_data <- df_pivot |>
 ts_data |> ggplot() + geom_line(aes(x = timestamp, y = value, color = code))
 
 # STEP 2 INTERPOLATION
-
-interpolate_idw_at_time <- function(
-    idw_obj,
-    ts_data,
-    t0,
-    return_matrix = TRUE,
-    clip_distance = 1000
-) {
-  sites_df <- idw_obj$sites
-  site_ids <- as.character(sites_df$id)
-  weights_raw <- idw_obj$weights_raw
-  dims <- idw_obj$dims
-  
-  # ---- 1. Extract last observation per site ----
-  last_obs <- ts_data |>
-    filter(code %in% site_ids, timestamp <= t0) |>
-    arrange(code, desc(timestamp)) |>
-    group_by(code) |>
-    slice_head(n = 1) |>
-    ungroup()
-  
-  # initialize vectors
-  z_last <- setNames(rep(NA_real_, length(site_ids)), site_ids)
-  age_minutes <- setNames(rep(NA_real_, length(site_ids)), site_ids)
-  
-  if (nrow(last_obs) > 0) {
-    z_last[last_obs$code] <- last_obs$value
-    age_minutes[last_obs$code] <-
-      as.numeric(difftime(t0, last_obs$timestamp, units = "mins"))
-  }
-  
-  # ---- 2. Age-weight computation ----
-  tau <- sites_df$tau_minutes
-  max_age <- sites_df$max_age_minutes
-  
-  age_weight <- rep(0, length(site_ids))
-  valid_age <- !is.na(age_minutes)
-  
-  age_weight[valid_age] <- exp(-age_minutes[valid_age] / tau[valid_age])
-  age_weight[valid_age & age_minutes > max_age] <- 0
-  
-  # invalidate missing values
-  invalid <- is.na(z_last) | age_weight == 0
-  if (all(invalid)) {
-    out <- rep(NA_real_, nrow(weights_raw))
-    if (return_matrix) {
-      return(matrix(out, nrow = dims[1], ncol = dims[2], byrow = FALSE))
-    }
-    return(out)
-  }
-  
-  # ---- 3. Apply age-weighted IDW ----
-  # scale columns of raw weights by age weights
-  weights_eff <- sweep(weights_raw, 2, age_weight, `*`)
-  weights_eff[, invalid] <- 0
-  
-  denom <- rowSums(weights_eff)
-  denom[denom == 0] <- NA_real_
-  
-  z_eff <- z_last
-  z_eff[invalid] <- 0
-  
-  numer <- as.vector(weights_eff %*% z_eff)
-  z_grid <- numer / denom
-  z_grid[is.nan(z_grid)] <- NA_real_
-  
-  z_grid[idw_obj$min_dist > clip_distance] <- NA_real_
-  
-  # ---- 4. Return ----
-  if (return_matrix) {
-    matrix(z_grid, nrow = dims[1], ncol = dims[2], byrow = FALSE)
-  } else {
-    z_grid
-  }
-}
 
 out <- interpolate_idw_at_time(idw_obj, 
                                ts_data, 

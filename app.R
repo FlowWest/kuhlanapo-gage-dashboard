@@ -248,9 +248,9 @@ ui <- fluidPage(
         label = "",
         choices = c(
           "All Transects" = "all",
-          "Transect A" = "A",
-          "Transect B" = "B",
-          "Transect C" = "C"
+          "A" = "A",
+          "B" = "B",
+          "C" = "C"
         ),
         selected = "all",
         size = "sm"
@@ -266,8 +266,10 @@ ui <- fluidPage(
         max = as.POSIXct("2026-02-03 23:59", tz = "America/Los_Angeles"),
         value = as.POSIXct("2026-01-01 00:00", tz = "America/Los_Angeles"),
         timeFormat = "%Y-%m-%d %H:%M",
-        step = 3600, # 1 hour steps
-        animate = animationOptions(interval = 1000, loop = TRUE)
+        step = 900, # 1 hour steps
+        animate = FALSE,
+        ticks = FALSE,
+        width = "300px"
       )
     )
   ),
@@ -366,7 +368,7 @@ server <- function(input, output, session) {
       piezo = c(
         "Elevation"  = "gwe_ft_navd88",
         "Depth to GW" = "gw_depth_ft",
-        "Piezometer Map" = "gw_contour"
+        "Map" = "gw_contour"
       ),
       c(
         "Depth"        = "depth",
