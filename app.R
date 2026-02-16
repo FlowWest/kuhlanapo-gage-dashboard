@@ -40,7 +40,7 @@ cache_data_file_precip <- file.path(usgs_cache_dir, "precip_ts.rds")
 cache_lock_file_precip <- file.path(usgs_cache_dir, "refresh.lock")
 rds_url_precip <- "https://github.com/flowwest/kuhlanapo-gage-dashboard/raw/main/data/precip_ts.rds"
 
-FORCE_LOCAL <- F
+FORCE_LOCAL <- T
 
 ZERO_RUMSEY_NAVD88 <- 1320.74
 
