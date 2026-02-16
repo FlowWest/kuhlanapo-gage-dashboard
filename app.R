@@ -236,29 +236,10 @@ ui <- fluidPage(
     class = "flow-fullwidth",
     style = "width: 95vw;",
     
-    dateRangeInput(
-      "date_range",
-      label = "",
-      start = as.Date("2025-12-09"), # Sys.Date() - 30,
-      end = as.Date("2026-02-03"), # Sys.Date(),
-      min = as.Date("2025-12-06"),
-      max = Sys.Date()
-    ),
+    uiOutput("date_range_selector"),
     
-    shinyWidgets::radioGroupButtons(
-      "top_metric",
-      label = "",
-      choices = c(
-        "Depth" = "depth",
-        "Water Surface" = "wse_ft_navd88",
-        "GW Elev" = "gwe_ft_navd88",
-        "GW Depth" = "gw_depth_ft",
-        "GW Contour" = "gw_contour"
-      ),
-      selected = "depth",
-      size = "sm"
-    ),
-    
+    uiOutput("top_metric_selector"),
+
     conditionalPanel(
       condition = "input.top_metric == 'gw_depth_ft' || input.top_metric == 'gwe_ft_navd88'",
       
@@ -309,25 +290,130 @@ ui <- fluidPage(
 ## SERVER ======================================================================
 
 server <- function(input, output, session) {
+  
+  ################
+  # URL PARAMETERS
+  ################
+  
+  # Parse URL query string once at session start
+  query <- reactive({
+    parseQueryString(session$clientData$url_search)
+  })
+  
+  url_mode <- reactive({
+    q <- query()
+    if (!is.null(q$mode) && q$mode %in% c("stage", "piezo")) {
+      message("URL parameters set mode to ", q$mode)
+      q$mode
+    } else {
+      "default"
+    }
+  })
+  
+  url_date_range <- reactive({
+    q <- query()
+    if (!is.null(q$start) && !is.null(q$end)) {
+      c(as.Date(q$start), as.Date(q$end))
+    } else {
+      NULL
+    }
+  })
+  
+  url_show_precip <- reactive({
+    q <- query()
+    
+    if (is.null(q$show_precip)) {
+      FALSE
+    } else if (q$show_precip == "" || q$show_precip %in% c("1", "true", "TRUE")) {
+      TRUE
+    } else if (q$show_precip %in% c("0", "false", "FALSE")) {
+      FALSE
+    } else {
+      FALSE
+    }
+  })
+  
+  output$date_range_selector <- renderUI({
+    
+    mode <- url_mode()
+    
+    dateRangeInput(
+      "date_range",
+      label = "",
+      start = switch(mode,
+                     stage = Sys.Date() - 30,
+                     piezo = as.Date("2025-12-09"),
+                     Sys.Date() - 30),
+      end = switch(mode,
+                   stage = Sys.Date(),
+                   piezo = as.Date("2026-02-03"),
+                   Sys.Date()),
+      min = as.Date("2025-12-06"),
+      max = Sys.Date()
+    )
+  })
+  
+  output$top_metric_selector <- renderUI({
+    
+    mode <- url_mode()
+    
+    choices <- switch(
+      mode,
+      stage = c(
+        "Depth" = "depth",
+        "Water Surface" = "wse_ft_navd88"
+      ),
+      piezo = c(
+        "Elevation"  = "gwe_ft_navd88",
+        "Depth to GW" = "gw_depth_ft",
+        "Piezometer Map" = "gw_contour"
+      ),
+      c(
+        "Depth"        = "depth",
+        "Water Surface"= "wse_ft_navd88",
+        "GW Elev"      = "gwe_ft_navd88",
+        "GW Depth"     = "gw_depth_ft"
+      )
+    )
+    
+    shinyWidgets::radioGroupButtons(
+      inputId = "top_metric",
+      label   = "",
+      choices = choices,
+      selected = choices[[1]],
+      size = "sm"
+    )
+  })
+  
+  #####
+  # APP
+  #####
 
   top_metric <- reactive({
+    
+    req(input$top_metric)
+    
     switch(
       input$top_metric,
+      
       depth = list(
         col   = "depth",
         label = "Depth (ft)",
         fmt   = function(x) sprintf("%.1f", x)
       ),
+      
       wse_ft_navd88 = list(
         col   = "wse_ft_navd88",
         label = "WSE (ft NAVD88)",
         fmt   = function(x) sprintf("%.2f", x)
       ),
+      
       gw_depth_ft = list(
         col   = "gw_depth_ft",
         label = "Surface to Groundwater Depth (ft)",
         fmt   = function(x) sprintf("%.2f", x)
       ),
+      
       gwe_ft_navd88 = list(
         col   = "gwe_ft_navd88",
         label = "Groundwater Elevation (ft NAVD88)",
@@ -358,12 +444,12 @@ server <- function(input, output, session) {
     
     if (!file.exists(cache_data_file_hydrovu)) {
       message("[cache:bootstrap] no cache → downloading initial copy")
-      download.file(rds_url, cache_data_file_hydrovu, mode = "wb", quiet = TRUE)
+      download.file(rds_url_hydrovu, cache_data_file_hydrovu, mode = "wb", quiet = TRUE)
     }
     
     df <- read_cached_data(cache_data_file_hydrovu)
     
-    if (cache_is_stale()) {
+    if (cache_is_stale(cache_data_file_hydrovu)) {
       message("[cache:decision] cache is stale → triggering async refresh")
       refresh_cache_async(cache_lock_file_hydrovu, rds_url_hydrovu)
     } else {
@@ -398,6 +484,8 @@ server <- function(input, output, session) {
   })
   
   precip_data <- reactive({
+    
+    req(url_show_precip())
 
     if((file.exists(here::here("data/precip_ts.rds"))) && FORCE_LOCAL) {
       message("FORCE_LOCAL is on; using data/precip_ts.rds locally")
@@ -422,6 +510,7 @@ server <- function(input, output, session) {
   })
   
   df_pivot <- reactive({
+    req(input$date_range)
     ts_data() |>
       inner_join(sites |> select(code, category)) |>
       filter(parm_name %in% c("Depth", "Temperature")) |>
@@ -492,6 +581,9 @@ server <- function(input, output, session) {
   })
 
   filtered_precip_df <- reactive({
+    
+    req(url_show_precip())
+    
     df <- precip_data()
     req(df)
     
@@ -536,14 +628,17 @@ server <- function(input, output, session) {
     req(nrow(base_df) > 0)
     tm <- top_metric()
     ycol <- tm$col
+    req(ycol)
     
     min_lake <- 1320.74 # as defined on USGS Clear Lake Lakeport gage
     max_lake <- min_lake + 7.56
     
-    precip_df <- filtered_precip_df() |> 
-      filter(site == "KPD")
+    if(url_show_precip()) {
+      precip_df <- filtered_precip_df() |> 
+        filter(site == "KPD")
+    }
     
-    if (ycol %in% c("wse_ft_navd88", "gwe_ft_navd88") & "lake_level" %in% names(base_df)) {
+    if (isTRUE(ycol %in% c("wse_ft_navd88", "gwe_ft_navd88") && "lake_level" %in% names(base_df))) {
       
       df_ll_plot <- base_df |>
         select(timestamp, lake_level) |>
@@ -595,7 +690,7 @@ server <- function(input, output, session) {
       
     }
     
-    if(ycol %in% c("depth", "wse_ft_navd88")) {
+    if(isTRUE(ycol %in% c("depth", "wse_ft_navd88"))) {
       
       min_y <- switch(input$top_metric,
                       "depth" = 0,
@@ -703,29 +798,32 @@ server <- function(input, output, session) {
       }
       }
     
-    p <- add_trace(
-      p,
-      x = precip_df$timestamp,           # left edge of the bar
-      y = precip_df$precip_in,
-      type = "bar",
-      name = "Precipitation",
-      legendgroup = "precip",
-      text = NULL,                       # remove bar labels
-      hovertext = paste0(
-        format(precip_df$timestamp, "%b %d, %Y %H:%M"), " - ", format(precip_df$timestamp  + lubridate::hours(1), "%b %d, %Y %H:%M"), "<br>",
-        "Precipitation: ", sprintf("%.2f in", precip_df$precip_in)
-      ),
-      hoverinfo = "text",
-      marker = list(color = "rgba(64,64,64,0.5)"),
-      width = 3600 * 1000,               # 1 hour in ms
-      yaxis = "y3",
-      offset = 0                         # align left side of bar with x
-    )
+    if(url_show_precip()){    
     
+      p <- add_trace(
+        p,
+        x = precip_df$timestamp,           # left edge of the bar
+        y = precip_df$precip_in,
+        type = "bar",
+        name = "Precipitation",
+        legendgroup = "precip",
+        text = NULL,                       # remove bar labels
+        hovertext = paste0(
+          format(precip_df$timestamp, "%b %d, %Y %H:%M"), " - ", format(precip_df$timestamp  + lubridate::hours(1), "%b %d, %Y %H:%M"), "<br>",
+          "Precipitation: ", sprintf("%.2f in", precip_df$precip_in)
+        ),
+        hoverinfo = "text",
+        marker = list(color = "rgba(64,64,64,0.5)"),
+        width = 3600 * 1000,               # 1 hour in ms
+        yaxis = "y3",
+        offset = 0                         # align left side of bar with x
+      )
+    }
+      
     y_domain <- if (top_metric()$col %in% c("gw_depth_ft", "gwe_ft_navd88")) {
-      c(0, 0.825)
+      if (url_show_precip()) c(0, 0.825) else c(0, 1)
     } else {
-      c(0.3, 0.825)
+      if (url_show_precip()) c(0.3, 0.825) else c(0.3, 1)
     }
     
   # add secondary Rumsey axis where relevant
@@ -788,10 +886,10 @@ server <- function(input, output, session) {
       overlaying = "x",
       side = "top"
     ),
-    xaxis3 = list(
+    xaxis3 = if (url_show_precip()) list(
       overlaying = "x",
       side = "top"
-    ),
+    ) else NULL,
     yaxis = list(
       title = tm$label,
       domain = y_domain,
@@ -803,11 +901,11 @@ server <- function(input, output, session) {
       domain = c(0, 0.3),
       fixedrange = TRUE
     ),
-    yaxis3 = list(
+    yaxis3 = if (url_show_precip()) list(
       title = "Hourly Precip (in)",
       domain = c(0.9, 1.0),
       fixedrange = TRUE
-    ),
+    ) else NULL,
     legend = list(
       orientation = "h",
       x = 0.5,
@@ -827,6 +925,7 @@ server <- function(input, output, session) {
   
   # Reactive: IDW interpolation at selected time
   gw_contour_df <- reactive({
+    req(url_mode() == "piezo")
     req(input$gw_time)
     df <- df_pivot() |> 
       filter(category == "Piezometer") |> 
@@ -843,6 +942,7 @@ server <- function(input, output, session) {
   
   # Output: GW Contour ggplot
   output$gw_contour_plot <- renderPlot({
+    req(url_mode() == "piezo")
     req(gw_contour_df())
     
     gw_contour_df() |>
