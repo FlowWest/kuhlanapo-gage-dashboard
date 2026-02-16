@@ -450,6 +450,8 @@ server <- function(input, output, session) {
   })
   
   precip_data <- reactive({
+    
+    req(url_show_precip())
 
     if((file.exists(here::here("data/precip_ts.rds"))) && FORCE_LOCAL) {
       message("FORCE_LOCAL is on; using data/precip_ts.rds locally")
@@ -545,6 +547,9 @@ server <- function(input, output, session) {
   })
 
   filtered_precip_df <- reactive({
+    
+    req(url_show_precip())
+    
     df <- precip_data()
     req(df)
     
@@ -593,8 +598,10 @@ server <- function(input, output, session) {
     min_lake <- 1320.74 # as defined on USGS Clear Lake Lakeport gage
     max_lake <- min_lake + 7.56
     
-    precip_df <- filtered_precip_df() |> 
-      filter(site == "KPD")
+    if(url_show_precip()) {
+      precip_df <- filtered_precip_df() |> 
+        filter(site == "KPD")
+    }
     
     if (ycol %in% c("wse_ft_navd88", "gwe_ft_navd88") & "lake_level" %in% names(base_df)) {
       
