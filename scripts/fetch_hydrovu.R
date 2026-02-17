@@ -7,6 +7,8 @@ library(tidyr)
 library(purrr)
 library(tibble)
 
+source(here::here("global.R"))
+
 ## CONFIG =====================================================================
 
 CLIENT_ID     <- Sys.getenv("HYDROVU_CLIENT_ID")
@@ -21,15 +23,7 @@ DATA_FILE <- "data/gage_data.rds"
 # Safety overlap when appending (prevents boundary misses)
 OVERLAP_DAYS <- 2
 
-gages <- tribble(
-  ~code,   ~site,                 ~name,           ~type,
-  "MC-01","Lower Manning Creek", "2025SGMC01",    "troll",
-  "MC-01","Lower Manning Creek", "2025SGMC01_VL", "vulink",
-  "MC-03","Upper Manning Creek", "2025SGMC03",    "troll",
-  "MC-03","Upper Manning Creek", "2025SGMC03_VL", "vulink",
-  "MC-02","Secondary Channel",   "2025SGMC02",    "troll",
-  "MC-02","Secondary Channel",   "2025SGMC02_VL", "vulink"
-) |> mutate(across(everything(), as.character))
+START_FRESH <- FALSE
 
 ## AUTH =======================================================================
 
@@ -130,12 +124,18 @@ existing_data <- if (file.exists(DATA_FILE)) {
   NULL
 }
 
+if (START_FRESH) {
+  existing_data <- existing_data[NULL, ] 
+}
+
 ## DETERMINE FETCH WINDOW ======================================================
 
 end_ts <- Sys.time()
 
 start_ts <- if (!is.null(existing_data) && nrow(existing_data) > 0) {
   max(existing_data$timestamp, na.rm = TRUE) - days(OVERLAP_DAYS)
+} else if (START_FRESH) {
+  ymd("2025-12-01")
 } else {
   end_ts - days(14)
 }
@@ -146,29 +146,35 @@ message("Fetching data from ", start_ts, " to ", end_ts)
 
 token <- get_access_token()
 locs  <- get_locations(token) |>
-  filter(name %in% gages$name)
+  filter(name %in% sensors$name)
 parms <- get_parameter_names(token)
 
-################################################################################
-# # temporary patch for missing locations
-# existing_locs <- existing_data |> 
-#   group_by(id, name, description) |> 
-#   summarize(.groups = "drop")
-# 
-# locs <- locs |> 
-#   full_join(existing_locs, by = join_by(id, name, description))
-################################################################################
-
-new_data <- locs |>
-  inner_join(gages, by = join_by(name == name)) |>
-  mutate(result = map(
-    id,
-    ~ get_readings(token, .x, parms, start_ts, end_ts)
-  )) |>
-  unnest(result) |>
+# review the time windows on the existing locations
+locs_with_window <- locs |>
+  left_join(existing_data |> 
+              group_by(id) |> 
+              summarise(last_ts = max(timestamp, na.rm = TRUE)), by = "id") |>
   mutate(
-    timestamp = as_datetime(timestamp, tz = "UTC")
+    start_ts_loc = if_else(is.na(last_ts), Sys.time() - days(14), last_ts - days(OVERLAP_DAYS)),
+    end_ts_loc   = Sys.time()
   )
+
+new_data <- locs_with_window |>
+  inner_join(bind_rows(gages, piezos), by = join_by(name == name)) |>
+  mutate(safe_call = pmap(
+    list(id, start_ts_loc, end_ts_loc),
+    \(x, y, z) safely(get_readings)(token, x, parms, y, z)
+  )) |>
+  mutate(
+    result = map(safe_call, "result"),
+    error  = map(safe_call, "error")
+  ) |>
+  select(-safe_call) |>
+  filter(map_lgl(error, is.null)) |>
+  select(-error) |>
+  unnest(result)
+
+message("Loaded ", nrow(new_data), " new records.")
 
 ## APPEND + DEDUPLICATE =========================================================
 
