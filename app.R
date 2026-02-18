@@ -40,7 +40,7 @@ cache_data_file_precip <- file.path(usgs_cache_dir, "precip_ts.rds")
 cache_lock_file_precip <- file.path(usgs_cache_dir, "refresh.lock")
 rds_url_precip <- "https://github.com/flowwest/kuhlanapo-gage-dashboard/raw/main/data/precip_ts.rds"
 
-FORCE_LOCAL <- T
+FORCE_LOCAL <- F
 
 ZERO_RUMSEY_NAVD88 <- 1320.74
 
@@ -371,10 +371,8 @@ server <- function(input, output, session) {
         "Map" = "gw_contour"
       ),
       c(
-        "Depth"        = "depth",
-        "Water Surface"= "wse_ft_navd88",
-        "GW Elev"      = "gwe_ft_navd88",
-        "GW Depth"     = "gw_depth_ft"
+        "Depth" = "depth",
+        "Water Surface" = "wse_ft_navd88"
       )
     )
     
@@ -458,7 +456,7 @@ server <- function(input, output, session) {
       message("[cache:decision] cache is fresh → no refresh")
     }
     
-    df
+    df |> glimpse()
   })
   
   ll_data <- reactive({
@@ -481,7 +479,7 @@ server <- function(input, output, session) {
     } else {
       message("[cache:decision] cache is fresh → no refresh")
     }
-    
+
     df
   })
   
