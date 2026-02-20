@@ -25,6 +25,10 @@ OVERLAP_DAYS <- 2
 
 START_FRESH <- FALSE
 
+UPDATE_PIEZOMETERS <- FALSE
+
+# PARM_NAMES <- c("Pressure", "Depth", "Temperature", "Baro")
+
 ## AUTH =======================================================================
 
 get_access_token <- function() {
@@ -128,26 +132,18 @@ if (START_FRESH) {
   existing_data <- existing_data[NULL, ] 
 }
 
-## DETERMINE FETCH WINDOW ======================================================
-
-end_ts <- Sys.time()
-
-start_ts <- if (!is.null(existing_data) && nrow(existing_data) > 0) {
-  max(existing_data$timestamp, na.rm = TRUE) - days(OVERLAP_DAYS)
-} else if (START_FRESH) {
-  ymd("2025-12-01")
-} else {
-  end_ts - days(14)
-}
-
-message("Fetching data from ", start_ts, " to ", end_ts)
-
 ## FETCH NEW DATA ==============================================================
 
 token <- get_access_token()
-locs  <- get_locations(token) |>
-  filter(name %in% sensors$name)
-parms <- get_parameter_names(token)
+if (UPDATE_PIEZOMETERS) {
+  locs  <- get_locations(token) |>
+    filter(name %in% sensors$name)
+} else {
+  locs  <- get_locations(token) |>
+    filter(name %in% gages$name)
+}
+parms <- get_parameter_names(token)# |>
+#filter(parm_name %in% PARM_NAMES)
 
 # review the time windows on the existing locations
 locs_with_window <- locs |>
@@ -159,6 +155,11 @@ locs_with_window <- locs |>
     end_ts_loc   = Sys.time()
   )
 
+message("Query windows:\n", 
+        paste(with(locs_with_window, 
+                   str_glue("{name} \t {start_ts_loc} - \t{end_ts_loc}")), 
+              collapse = "\n"))
+
 new_data <- locs_with_window |>
   inner_join(bind_rows(gages, piezos), by = join_by(name == name)) |>
   mutate(safe_call = pmap(
@@ -169,7 +170,7 @@ new_data <- locs_with_window |>
     result = map(safe_call, "result"),
     error  = map(safe_call, "error")
   ) |>
-  select(-safe_call) |>
+  select(-safe_call, -last_ts, -start_ts_loc, -end_ts_loc) |>
   filter(map_lgl(error, is.null)) |>
   select(-error) |>
   unnest(result)
