@@ -310,9 +310,6 @@ server <- function(input, output, session) {
       label_df <- df_latest()
       req(nrow(base_df) > 0, nrow(label_df) > 0)
       
-      site_colors <- RColorBrewer::brewer.pal(n = length(sites$code), name = "Paired")
-      names(site_colors) <- sites$code
-      
       # ---- Clean depth data ----
       base_df_depth <- base_df |> filter(!is.na(depth))
       
@@ -362,9 +359,6 @@ server <- function(input, output, session) {
       
       base_df <- filtered_df()
       req(nrow(base_df) > 0)
-      
-      site_colors <- RColorBrewer::brewer.pal(n = length(sites$code), name = "Paired")
-      names(site_colors) <- sites$code
       
       # ---- Depth traces ----
       p <- plot_ly() |>
