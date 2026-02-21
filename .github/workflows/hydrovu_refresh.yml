@@ -37,6 +37,7 @@ jobs:
             purrr
             tibble
             forcats
+            stringr
 
       - name: Fetch HydroVu data
         env:
