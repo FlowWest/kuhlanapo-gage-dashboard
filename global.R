@@ -1,4 +1,7 @@
-library(tidyverse)
+# global.R
+library(dplyr)
+library(tibble)
+library(forcats)
 
 sites <- tribble(
   ~category,    ~code,   ~site,                 ~site_label,                  ~site_descrip,                    ~twg_elev,

@@ -36,6 +36,7 @@ jobs:
             tidyr
             purrr
             tibble
+            forcats
 
       - name: Fetch HydroVu data
         env:
