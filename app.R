@@ -364,7 +364,7 @@ server <- function(input, output, session) {
       p <- plot_ly() |>
         config(displayModeBar = TRUE)
       
-      for (s in sites$code) {
+      for (s in sites_stage$code) {
         df_s <- base_df |> filter(code == s)
         
         # Depth trace
@@ -385,7 +385,7 @@ server <- function(input, output, session) {
       }
       
       # ---- Temperature traces ----
-      for (s in sites$code) {
+      for (s in sites_stage$code) {
         df_s <- base_df |> filter(code == s)
         
         # Water temperature (solid)
