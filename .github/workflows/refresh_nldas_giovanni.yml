@@ -1,11 +1,11 @@
 name: Refresh NLDAS Giovanni Time Series
 
 on:
-  schedule:
-    # 7:45am Pacific = 14:15 UTC (standard), 15:45 UTC (DST)
-    # Run twice; script enforces PT time window
-    - cron: "45 14 * * *"
-    - cron: "45 15 * * *"
+  # schedule:
+  #   # 7:45am Pacific = 14:15 UTC (standard), 15:45 UTC (DST)
+  #   # Run twice; script enforces PT time window
+  #   - cron: "45 14 * * *"
+  #   - cron: "45 15 * * *"
   workflow_dispatch:
 
 jobs:
@@ -34,15 +34,12 @@ jobs:
         env:
           EARTHDATA_TOKEN: ${{ secrets.EARTHDATA_TOKEN }}
         run: |
-          Rscript fetch_nldas_giovanni.R
+          Rscript scripts/fetch_nldas_giovanni.R
 
-      - name: Configure Git for push
+      - name: Commit updated data
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-      - name: Commit and push downloaded data
-        run: |
-          git add data/nldas_timeseries/*.csv
-          git commit -m "Update NLDAS Giovanni timeseries data [skip ci]" || echo "No changes to commit"
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add data/precip_ts.rds
+          git commit -m "Daily precip refresh" || echo "No changes"
           git push
