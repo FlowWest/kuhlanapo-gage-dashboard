@@ -2,16 +2,39 @@ name: USGS Lake Level Refresh
 
 on:
   schedule:
-    # 7:30am Pacific ≈ 14:30 / 15:30 UTC
-    - cron: "30 14 * * *"
-    - cron: "30 15 * * *"
+    # 7:XXam Pacific = 14:XX UTC (standard), 15:XX UTC (DST)
+    # Run twice; script enforces PT time window
+    - cron: "15 14 * * *"
+    - cron: "15 15 * * *"
   workflow_dispatch:
 
+concurrency:
+  group: data-pull-lock
+  cancel-in-progress: false
+  
 jobs:
   refresh:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Check schedule against time zone
+        id: ptcheck
+        if: github.event_name == 'schedule'
+        run: |
+          PT_HOUR=$(TZ=America/Los_Angeles date +'%H')
+
+          if [ "$PT_HOUR" = "07" ]; then
+            echo "run_job=true" >> $GITHUB_OUTPUT
+          else
+            echo "run_job=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Skip if not correct scheduled time
+        if: github.event_name == 'schedule' && steps.ptcheck.outputs.run_job != 'true'
+        run: |
+          echo "Not at the schedule time in PT. Skipping scheduled run."
+          exit 0
+          
       - name: Checkout repo
         uses: actions/checkout@v4
         with:
