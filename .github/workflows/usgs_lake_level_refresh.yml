@@ -4,8 +4,8 @@ on:
   schedule:
     # 7:XXam Pacific = 14:XX UTC (standard), 15:XX UTC (DST)
     # Run twice; script enforces PT time window
-    - cron: "15 14 * * *"
-    - cron: "15 15 * * *"
+    - cron: "30 14 * * *"
+    - cron: "30 15 * * *"
   workflow_dispatch:
 
 concurrency:
