@@ -152,7 +152,7 @@ plt_gw_elev <-
                         values = c("Lake Level" = "solid",
                                    "Full Lake" = "dotted")) +
   theme(panel.grid.major = element_line(),
-        axis.text.x.bottom = element_text(angle = 45, hjust=1))
+        axis.text.x.bottom = element_text(angle = 30, hjust=1))
 
 print(plt_gw_elev)
 ```
@@ -178,7 +178,7 @@ plt_gw_depth <-
   scale_linetype_manual(name = "",
                         values = c("Ground" = "dashed")) +
   theme(panel.grid.major = element_line(),
-        axis.text.x.bottom = element_text(angle = 45, hjust=1))
+        axis.text.x.bottom = element_text(angle = 30, hjust=1))
 
 print(plt_gw_depth)
 ```
@@ -203,7 +203,7 @@ plt_gw_precip <-
                      breaks = scales::breaks_width(0.1),
                      expand = c(0, NA)) +
   theme(panel.grid.major = element_line(),
-        axis.text.x.bottom = element_text(angle = 45, hjust=1))
+        axis.text.x.bottom = element_text(angle = 30, hjust=1))
 
 print(plt_gw_precip)
 ```
@@ -239,7 +239,7 @@ plt_sw_depth <-
   scale_color_manual(name = "Stage Gages",
                      values = site_colors) +
   theme(panel.grid.major = element_line(),
-        axis.text.x.bottom = element_text(angle = 45, hjust=1))
+        axis.text.x.bottom = element_text(angle = 30, hjust=1))
 
 print(plt_sw_depth)
 ```
@@ -271,7 +271,7 @@ plt_sw_elev <-
                         values = c("Lake Level" = "solid",
                                    "Full Lake" = "dotted")) +
   theme(panel.grid.major = element_line(),
-        axis.text.x.bottom = element_text(angle = 45, hjust=1))
+        axis.text.x.bottom = element_text(angle = 30, hjust=1))
 
 print(plt_sw_elev)
 ```
@@ -296,7 +296,7 @@ plt_sw_precip <-
                      breaks = scales::breaks_width(0.1),
                      expand = c(0, NA)) +
   theme(panel.grid.major = element_line(),
-        axis.text.x.bottom = element_text(angle = 45, hjust=1))
+        axis.text.x.bottom = element_text(angle = 30, hjust=1))
 
 print(plt_sw_precip)
 ```
@@ -305,4 +305,65 @@ print(plt_sw_precip)
 (plt_sw_precip / plt_sw_depth / plt_sw_elev) +
   plot_layout(heights = c(1, 2, 2), guides = "collect", axes = "collect_x")
 ```
+
+## Specific Figures
+
+```{r, gw_oak_woodland, fig.width=6.5, fig.height=4, dpi=300}
+plt_gw_depth_a3 <-
+  df_pivot |>
+  filter(category == "Piezometer") |>
+  filter(code == "PZ-A3") |>
+  filter(timestamp >= GW_START) |>
+  filter(timestamp <= GW_END) |>
+  ggplot(aes(x = timestamp, y = gw_depth_ft)) +
+  geom_line(aes(color = code)) +
+  geom_hline(aes(yintercept = 0,
+                 linetype = "Ground")) +
+  scale_x_datetime(name = "",
+                   date_breaks = "1 week",
+                   expand = c(0, 0),
+                   limits = c(GW_START, GW_END)) +
+  scale_y_reverse(name = "Depth Below Ground (ft)",
+                  breaks = scales::breaks_width(1)) +
+  scale_color_manual(name = "Piezometers",
+                     values = piezo_colors) +
+  scale_linetype_manual(name = "",
+                        values = c("Ground" = "dashed")) +
+  theme(panel.grid.major = element_line(),
+        axis.text.x.bottom = element_text(angle = 30, hjust=1))
+
+print((plt_gw_precip / plt_gw_depth_a3) +
+        plot_layout(heights = c(1, 2),
+                    axes = "collect_x"))
+```
+
+```{r, gw_tule_wetland, fig.width=6.5, fig.height=4, dpi=300}
+plt_gw_depth_a2_b2 <-
+  df_pivot |>
+  filter(category == "Piezometer") |>
+  filter(code %in% c("PZ-A2", "PZ-B2")) |>
+  filter(timestamp >= GW_START) |>
+  filter(timestamp <= GW_END) |>
+  ggplot(aes(x = timestamp, y = gw_depth_ft)) +
+  geom_line(aes(color = code)) +
+  geom_hline(aes(yintercept = 0,
+                 linetype = "Ground")) +
+  scale_x_datetime(name = "",
+                   date_breaks = "1 week",
+                   expand = c(0, 0),
+                   limits = c(GW_START, GW_END)) +
+  scale_y_reverse(name = "Depth Below Ground (ft)",
+                  breaks = scales::breaks_width(1)) +
+  scale_color_manual(name = "Piezometers",
+                     values = piezo_colors) +
+  scale_linetype_manual(name = "",
+                        values = c("Ground" = "dashed")) +
+  theme(panel.grid.major = element_line(),
+        axis.text.x.bottom = element_text(angle = 30, hjust=1))
+
+print((plt_gw_precip / plt_gw_depth_a2_b2) +
+        plot_layout(heights = c(1, 2),
+                    axes = "collect_x"))
+```
+
 
