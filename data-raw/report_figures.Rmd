@@ -120,21 +120,27 @@ df_pivot <- ts_data |>
 
 ## Groundwater Study
 
+```{r}
+GW_START <- ymd_hms("2025-12-05T00:00:00")
+GW_END <- ymd_hms("2026-02-05T23:59:59")
+```
+
 ```{r gw_elev, fig.width=6.5, fig.height=4, dpi=300}
 plt_gw_elev <-
   df_pivot |>
   filter(category == "Piezometer") |>
-  filter(timestamp >= ymd("2025-12-05")) |>
-  filter(timestamp < ymd("2026-02-05")) |>
+  filter(timestamp >= GW_START) |>
+  filter(timestamp <= GW_END) |>
   ggplot(aes(x = timestamp, y = gwe_ft_navd88)) +
-  geom_line(data = ll_data |> filter(timestamp < ymd("2026-02-05")), 
+  geom_line(data = ll_data |> filter(timestamp < GW_END), 
             aes(y = value, linetype = "Lake Level")) +
   geom_line(aes(color = code)) +
   geom_hline(aes(yintercept = rumsey_to_navd88_usgs(7.56),
                  linetype = "Full Lake")) +
   scale_x_datetime(name = "",
                    date_breaks = "1 week",
-                   expand = c(0, 0)) +
+                   expand = c(0, 0),
+                   limits = c(GW_START, GW_END)) +
   scale_y_continuous(name = "Elevation (ft NAVD88)",
                      breaks = scales::breaks_width(1),
                      sec.axis = sec_axis(name = "Elevation (ft Rumsey)", 
@@ -155,15 +161,16 @@ print(plt_gw_elev)
 plt_gw_depth <-
   df_pivot |>
   filter(category == "Piezometer") |>
-  filter(timestamp >= ymd("2025-12-05")) |>
-  filter(timestamp < ymd("2026-02-05")) |>
+  filter(timestamp >= GW_START) |>
+  filter(timestamp <= GW_END) |>
   ggplot(aes(x = timestamp, y = gw_depth_ft)) +
   geom_line(aes(color = code)) +
   geom_hline(aes(yintercept = 0,
                  linetype = "Ground")) +
   scale_x_datetime(name = "",
                    date_breaks = "1 week",
-                   expand = c(0, 0)) +
+                   expand = c(0, 0),
+                   limits = c(GW_START, GW_END)) +
   scale_y_reverse(name = "Depth Below Ground Surface (ft)",
                   breaks = scales::breaks_width(1)) +
   scale_color_manual(name = "Piezometers",
@@ -180,8 +187,8 @@ print(plt_gw_depth)
 plt_gw_precip <-
   precip_data |>
   filter(site == "KPD") |>
-  filter(timestamp >= ymd("2025-12-05")) |>
-  filter(timestamp < ymd("2026-02-05")) |>
+  filter(timestamp >= GW_START) |>
+  filter(timestamp <= GW_END) |>
   ggplot() +
   geom_hline(yintercept = 0) +
   geom_rect(aes(xmin = timestamp,
@@ -190,7 +197,8 @@ plt_gw_precip <-
                 ymax = precip_in)) +
   scale_x_datetime(name = "",
                  date_breaks = "1 week",
-                 expand = c(0, 0)) +
+                 expand = c(0, 0),
+                 limits = c(GW_START, GW_END)) +
   scale_y_continuous(name = "Precipitation (in)",
                      breaks = scales::breaks_width(0.1),
                      expand = c(0, NA)) +
@@ -207,6 +215,11 @@ print(plt_gw_precip)
 
 ## Surface Water
 
+```{r}
+SW_START <- ymd_hms("2025-12-05T00:00:00")
+SW_END <- ymd_hms("2026-04-30T23:59:59")
+```
+
 ```{r sw_depth, fig.width=6.5, fig.height=4, dpi=300}
 plt_sw_depth <-
   df_pivot |>
@@ -215,9 +228,11 @@ plt_sw_depth <-
   filter(timestamp < ymd("2026-04-30")) |>
   ggplot(aes(x = timestamp, y = depth)) +
   geom_line(aes(color = code)) +
+  geom_hline(aes(yintercept = 0)) +
   scale_x_datetime(name = "",
                    date_breaks = "1 month",
-                   expand = c(0, 0)) +
+                   expand = c(0, 0),
+                   limits = c(SW_START, SW_END)) +
   scale_y_continuous(name = "Water Depth (ft)",
                      breaks = scales::breaks_width(1),
                      expand = c(0, NA)) +
@@ -233,17 +248,18 @@ print(plt_sw_depth)
 plt_sw_elev <-
   df_pivot |>
   filter(category == "Stage Gage") |>
-  filter(timestamp >= ymd("2025-12-05")) |>
-  filter(timestamp < ymd("2026-04-30")) |>
+  filter(timestamp >= SW_START) |>
+  filter(timestamp <= SW_END) |>
   ggplot(aes(x = timestamp, y = wse_ft_navd88)) +
-  geom_line(data = ll_data |> filter(timestamp < ymd("2026-04-30")), 
+  geom_line(data = ll_data |> filter(timestamp < SW_END), 
             aes(y = value, linetype = "Lake Level")) +
   geom_line(aes(color = code)) +
   geom_hline(aes(yintercept = rumsey_to_navd88_usgs(7.56),
                  linetype = "Full Lake")) +
   scale_x_datetime(name = "",
                    date_breaks = "1 month",
-                   expand = c(0, 0)) +
+                   expand = c(0, 0),
+                   limits = c(SW_START, SW_END)) +
   scale_y_continuous(name = "Elevation (ft NAVD88)",
                      breaks = scales::breaks_width(1),
                      sec.axis = sec_axis(name = "Elevation (ft Rumsey)", 
@@ -264,8 +280,8 @@ print(plt_sw_elev)
 plt_sw_precip <-
   precip_data |>
   filter(site == "UMC") |>
-  filter(timestamp >= ymd("2025-12-05")) |>
-  filter(timestamp < ymd("2026-04-30")) |>
+  filter(timestamp >= SW_START) |>
+  filter(timestamp <= SW_END) |>
   ggplot() +
   geom_hline(yintercept = 0) +
   geom_rect(aes(xmin = timestamp,
@@ -274,7 +290,8 @@ plt_sw_precip <-
                 ymax = precip_in)) +
   scale_x_datetime(name = "",
                    date_breaks = "1 month",
-                   expand = c(0, 0)) +
+                   expand = c(0, 0),
+                   limits = c(SW_START, SW_END)) +
   scale_y_continuous(name = "Precipitation (in)",
                      breaks = scales::breaks_width(0.1),
                      expand = c(0, NA)) +
