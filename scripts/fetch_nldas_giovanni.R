@@ -20,6 +20,9 @@ version    <- "2.0"
 # https://api.giovanni.earthdata.nasa.gov/proxy-timeseries?data=NLDAS_FORA0125_H_2_0_Rainf&location=[39.024924,-122.906493]&time=2025-12-01T00:00:00/2026-02-09T00:00:00&version=2.0
 # https://api.giovanni.earthdata.nasa.gov/proxy-timeseries?data=NLDAS_FORA0125_H_2_0_Rainf&location=[38.995516,-122.934703]&time=2025-12-01T00:00:00/2026-02-09T00:00:00&version=2.0
 
+# https://api.giovanni.earthdata.nasa.gov/proxy-timeseries?data=NLDAS_FORA0125_H_2_0_Rainf&location=[39.024924,-122.906493]&time=2025-12-01T00:00:00/2026-04-30T23:59:59&version=2.0
+# https://api.giovanni.earthdata.nasa.gov/proxy-timeseries?data=NLDAS_FORA0125_H_2_0_Rainf&location=[38.995516,-122.934703]&time=2025-12-01T00:00:00/2026-04-30T23:59:59&version=2.0
+
 USE_LOCAL <- F
 
 if(USE_LOCAL) {
