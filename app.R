@@ -461,9 +461,9 @@ server <- function(input, output, session) {
   
   ll_data <- reactive({
     
-    if((file.exists(here::here("data/usgs_lake_level-11450000.rds"))) && FORCE_LOCAL) {
-      message("FORCE_LOCAL is on; using data/usgs_lake_level-11450000.rds locally")
-      return(readRDS(here::here("data/usgs_lake_level-11450000.rds")))
+    if((file.exists(here::here("data/usgs_lake_level_11450000.rds"))) && FORCE_LOCAL) {
+      message("FORCE_LOCAL is on; using data/usgs_lake_level_11450000.rds locally")
+      return(readRDS(here::here("data/usgs_lake_level_11450000.rds")))
     }
 
     if (!file.exists(cache_data_file_lakelevel)) {
