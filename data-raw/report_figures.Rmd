@@ -309,6 +309,35 @@ print(plt_sw_precip)
 ## Specific Figures
 
 ```{r, gw_oak_woodland, fig.width=6.5, fig.height=4, dpi=300}
+plt_gw_depth_b4 <-
+  df_pivot |>
+  filter(category == "Piezometer") |>
+  filter(code == "PZ-B4") |>
+  filter(timestamp >= GW_START) |>
+  filter(timestamp <= GW_END) |>
+  ggplot(aes(x = timestamp, y = gw_depth_ft)) +
+  geom_line(aes(color = code)) +
+  geom_hline(aes(yintercept = 0,
+                 linetype = "Ground")) +
+  scale_x_datetime(name = "",
+                   date_breaks = "1 week",
+                   expand = c(0, 0),
+                   limits = c(GW_START, GW_END)) +
+  scale_y_reverse(name = "Depth Below Ground (ft)",
+                  breaks = scales::breaks_width(1)) +
+  scale_color_manual(name = "Piezometers",
+                     values = "black") +
+  scale_linetype_manual(name = "",
+                        values = c("Ground" = "dashed")) +
+  theme(panel.grid.major = element_line(),
+        axis.text.x.bottom = element_text(angle = 30, hjust=1))
+
+print((plt_gw_precip / plt_gw_depth_b4) +
+        plot_layout(heights = c(1, 2),
+                    axes = "collect_x"))
+```
+
+```{r, gw_transitional_wetland, fig.width=6.5, fig.height=4, dpi=300}
 plt_gw_depth_a3 <-
   df_pivot |>
   filter(category == "Piezometer") |>
@@ -326,7 +355,7 @@ plt_gw_depth_a3 <-
   scale_y_reverse(name = "Depth Below Ground (ft)",
                   breaks = scales::breaks_width(1)) +
   scale_color_manual(name = "Piezometers",
-                     values = piezo_colors) +
+                     values = "black") +
   scale_linetype_manual(name = "",
                         values = c("Ground" = "dashed")) +
   theme(panel.grid.major = element_line(),
@@ -366,4 +395,36 @@ print((plt_gw_precip / plt_gw_depth_a2_b2) +
                     axes = "collect_x"))
 ```
 
+## SW-GW Interaction
 
+```{r sw_gw_elev, fig.width=6.5, fig.height=4, dpi=300}
+plt_sw_gw_elev <-
+  df_pivot |>
+  filter(code %in% c("MC-01", "PZ-C1")) |>
+  filter(timestamp >= GW_START) |>
+  filter(timestamp <= GW_END) |>
+  ggplot(aes(x = timestamp, y = coalesce(wse_ft_navd88, gwe_ft_navd88))) +
+  geom_line(data = ll_data |> filter(timestamp < GW_END), 
+            aes(y = value, linetype = "Lake Level")) +
+  geom_line(aes(color = code)) +
+  geom_hline(aes(yintercept = rumsey_to_navd88_usgs(7.56),
+                 linetype = "Full Lake")) +
+  scale_x_datetime(name = "",
+                   date_breaks = "1 week",
+                   expand = c(0, 0),
+                   limits = c(GW_START, GW_END)) +
+  scale_y_continuous(name = "Elevation (ft NAVD88)",
+                     breaks = scales::breaks_width(1),
+                     sec.axis = sec_axis(name = "Elevation (ft Rumsey)", 
+                                         transform = ~ navd88_to_rumsey_usgs(.),
+                                         breaks = scales::breaks_width(1))) +
+  scale_color_manual(name = "Stations",
+                     values = c(site_colors, piezo_colors)) +
+  scale_linetype_manual(name = "",
+                        values = c("Lake Level" = "solid",
+                                   "Full Lake" = "dotted")) +
+  theme(panel.grid.major = element_line(),
+        axis.text.x.bottom = element_text(angle = 30, hjust=1))
+
+print(plt_sw_gw_elev)
+```
