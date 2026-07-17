@@ -382,9 +382,13 @@ server <- function(input, output, session) {
         "Depth to GW" = "gw_depth_ft",
         "Map" = "gw_contour"
       ),
+      # default (no mode param): show both stage and piezo options together
       c(
         "Depth" = "depth",
-        "Water Surface" = "wse_ft_navd88"
+        "Water Surface" = "wse_ft_navd88",
+        "Elevation"  = "gwe_ft_navd88",
+        "Depth to GW" = "gw_depth_ft",
+        "Map" = "gw_contour"
       )
     )
     
