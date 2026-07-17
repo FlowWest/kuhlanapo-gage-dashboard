@@ -67,4 +67,10 @@ jobs:
           git config user.email "github-actions@github.com"
           git add data/precip_ts.rds
           git commit -m "Daily precip refresh" || echo "No changes"
-          git push origin HEAD:data
+
+          for i in 1 2 3 4 5; do
+            git push origin HEAD:data && break
+            echo "Push rejected (attempt $i/5) - rebasing onto latest data branch and retrying"
+            git fetch origin data
+            git rebase origin/data
+          done
