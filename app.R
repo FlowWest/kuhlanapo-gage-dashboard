@@ -336,20 +336,32 @@ server <- function(input, output, session) {
   })
   
   output$date_range_selector <- renderUI({
-    
+
     mode <- url_mode()
-    
+
+    # stage data lags behind Sys.Date() when the upstream refresh is delayed/stale;
+    # clamp the rolling window to the latest timestamp actually on hand so it
+    # doesn't default to an empty range
+    latest_stage_date <- tryCatch(
+      as.Date(max(ts_data()$timestamp, na.rm = TRUE)),
+      error = function(e) Sys.Date()
+    )
+    if (is.na(latest_stage_date) || is.infinite(as.numeric(latest_stage_date))) {
+      latest_stage_date <- Sys.Date()
+    }
+    latest_stage_date <- min(Sys.Date(), latest_stage_date)
+
     dateRangeInput(
       "date_range",
       label = "",
       start = switch(mode,
-                     stage = Sys.Date() - 30,
+                     stage = latest_stage_date - 30,
                      piezo = as.Date("2025-12-09"),
-                     Sys.Date() - 30),
+                     latest_stage_date - 30),
       end = switch(mode,
-                   stage = Sys.Date(),
+                   stage = latest_stage_date,
                    piezo = as.Date("2026-02-03"),
-                   Sys.Date()),
+                   latest_stage_date),
       min = as.Date("2025-12-06"),
       max = Sys.Date()
     )
@@ -494,9 +506,12 @@ server <- function(input, output, session) {
     
     if (!file.exists(cache_data_file_precip)) {
       message("[cache:bootstrap] no cache → downloading initial copy")
-      download.file(rds_url_precip, cache_data_file_precip, mode = "wb", quiet = TRUE)
+      tryCatch(
+        download.file(rds_url_precip, cache_data_file_precip, mode = "wb", quiet = TRUE),
+        error = function(e) message("[cache:bootstrap] FAILED: ", conditionMessage(e))
+      )
     }
-    
+
     df <- read_cached_data(cache_data_file_precip)
     
     if (cache_is_stale(cache_data_file_precip)) {
@@ -580,17 +595,25 @@ server <- function(input, output, session) {
     df |> filter(timestamp >= start_ts, timestamp <= end_ts)
   })
 
+  empty_precip_schema <- tibble(
+    site = character(),
+    timestamp = as.POSIXct(character(), tz = "America/Los_Angeles"),
+    precip_in = numeric()
+  )
+
   filtered_precip_df <- reactive({
-    
+
     req(url_show_precip())
-    
+
     df <- precip_data()
-    req(df)
-    
+    # precip is a supplementary layer - if it failed to load (e.g. upstream
+    # file unavailable), skip the layer rather than blocking the whole plot
+    if (is.null(df)) return(empty_precip_schema)
+
     start_ts <- as.POSIXct(input$date_range[1], tz = "America/Los_Angeles")
     end_ts   <- as.POSIXct(input$date_range[2], tz = "America/Los_Angeles") +
       hours(23) + minutes(59) + seconds(59)
-    
+
     df |> filter(timestamp >= start_ts, timestamp <= end_ts)
   })
   
@@ -625,7 +648,7 @@ server <- function(input, output, session) {
       config(displayModeBar = TRUE)
     
     base_df <- filtered_df()
-    req(nrow(base_df) > 0)
+    validate(need(nrow(base_df) > 0, "No data available for the selected date range."))
     tm <- top_metric()
     ycol <- tm$col
     req(ycol)
