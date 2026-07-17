@@ -1,31 +1,56 @@
----
-title: "Kuhlanapo Gage Data Figures for Reports"
-author: "Skyler Lewis"
-date: "`r Sys.Date()`"
-output: 
-  html_document:
-    toc: true
-    toc_depth: 3
-    number_sections: false
-    code_folding: hide
-  github_document:
-    toc: true
-    toc_depth: 3
-    number_sections: true
----
+Kuhlanapo Gage Data Figures for Reports
+================
+Skyler Lewis
+2026-07-17
 
-```{r setup}
+- [0.1 Import Data](#01-import-data)
+- [0.2 Groundwater Study](#02-groundwater-study)
+- [0.3 Surface Water](#03-surface-water)
+- [0.4 Specific Figures](#04-specific-figures)
+- [0.5 SW-GW Interaction](#05-sw-gw-interaction)
+
+``` r
 knitr::opts_chunk$set(
-	fig.height = 4,
-	fig.width = 6.5,
-	message = FALSE,
-	warning = TRUE,
-	dpi = 300
+    fig.height = 4,
+    fig.width = 6.5,
+    message = FALSE,
+    warning = TRUE,
+    dpi = 300
 )
 library(tidyverse)
-library(janitor)
-library(patchwork)
+```
 
+    ## Warning: package 'ggplot2' was built under R version 4.4.3
+
+    ## ── Attaching core tidyverse packages ──────────────────────── tidyverse 2.0.0 ──
+    ## ✔ dplyr     1.1.4     ✔ readr     2.1.5
+    ## ✔ forcats   1.0.0     ✔ stringr   1.5.1
+    ## ✔ ggplot2   4.0.1     ✔ tibble    3.2.1
+    ## ✔ lubridate 1.9.3     ✔ tidyr     1.3.1
+    ## ✔ purrr     1.0.2     
+    ## ── Conflicts ────────────────────────────────────────── tidyverse_conflicts() ──
+    ## ✖ dplyr::filter() masks stats::filter()
+    ## ✖ dplyr::lag()    masks stats::lag()
+    ## ℹ Use the conflicted package (<http://conflicted.r-lib.org/>) to force all conflicts to become errors
+
+``` r
+library(janitor)
+```
+
+    ## 
+    ## Attaching package: 'janitor'
+    ## 
+    ## The following objects are masked from 'package:stats':
+    ## 
+    ##     chisq.test, fisher.test
+
+``` r
+library(patchwork)
+```
+
+    ## Warning: package 'patchwork' was built under R version 4.4.3
+
+``` r
 theme_custom <- function(base_size = 12) {
   theme_minimal(base_size = base_size) +
     theme(
@@ -46,11 +71,11 @@ navd88_to_rumsey_usgs <- function(x) x - 1320.74
 rumsey_to_navd88_usgs <- function(x) x + 1320.74
 ```
 
-## Import Data
+## 0.1 Import Data
 
 Import time series data
 
-```{r data_import}
+``` r
 # pull the latest refreshed data from the dedicated `data` branch rather than
 # this branch's local (static, increasingly stale) snapshots
 data_branch_url <- "https://github.com/flowwest/kuhlanapo-gage-dashboard/raw/data/data"
@@ -68,7 +93,7 @@ precip_data <- download_rds("precip_ts.rds")
 
 Apply data cleaning, exactly duplicating the procedure in `app.R`
 
-```{r data_cleaning}
+``` r
 df_pivot <- ts_data |>
       inner_join(sites |> select(code, category)) |>
       filter(parm_name %in% c("Depth", "Temperature")) |>
@@ -125,17 +150,16 @@ df_pivot <- ts_data |>
                                    NA)
              ) |>
       select(-name, -gse_ft_navd88, -tdx_ft_navd88)
-
 ```
 
-## Groundwater Study
+## 0.2 Groundwater Study
 
-```{r}
+``` r
 GW_START <- ymd_hms("2025-12-05T00:00:00")
 GW_END <- ymd_hms("2026-02-05T23:59:59")
 ```
 
-```{r gw_elev, fig.width=6.5, fig.height=4, dpi=300}
+``` r
 plt_gw_elev <-
   df_pivot |>
   filter(category == "Piezometer") |>
@@ -167,7 +191,12 @@ plt_gw_elev <-
 print(plt_gw_elev)
 ```
 
-```{r gw_depth, fig.width=6.5, fig.height=4, dpi=300}
+    ## Warning: Removed 73 rows containing missing values or values outside the scale range
+    ## (`geom_line()`).
+
+![](report_figures_files/figure-gfm/gw_elev-1.png)<!-- -->
+
+``` r
 plt_gw_depth <-
   df_pivot |>
   filter(category == "Piezometer") |>
@@ -193,7 +222,12 @@ plt_gw_depth <-
 print(plt_gw_depth)
 ```
 
-```{r gw_precip, fig.width=6.5, fig.height=4, dpi=300}
+    ## Warning: Removed 73 rows containing missing values or values outside the scale range
+    ## (`geom_line()`).
+
+![](report_figures_files/figure-gfm/gw_depth-1.png)<!-- -->
+
+``` r
 plt_gw_precip <-
   precip_data |>
   filter(site == "KPD") |>
@@ -218,19 +252,28 @@ plt_gw_precip <-
 print(plt_gw_precip)
 ```
 
-```{r gw_combined, fig.width=6.5, fig.height=8.2, dpi=300}
+![](report_figures_files/figure-gfm/gw_precip-1.png)<!-- -->
+
+``` r
 (plt_gw_precip / plt_gw_depth / plt_gw_elev) +
   plot_layout(heights = c(1, 2, 2), guides = "collect", axes = "collect_x")
 ```
 
-## Surface Water
+    ## Warning: Removed 73 rows containing missing values or values outside the scale range
+    ## (`geom_line()`).
+    ## Removed 73 rows containing missing values or values outside the scale range
+    ## (`geom_line()`).
 
-```{r}
+![](report_figures_files/figure-gfm/gw_combined-1.png)<!-- -->
+
+## 0.3 Surface Water
+
+``` r
 SW_START <- ymd_hms("2025-12-05T00:00:00")
 SW_END <- ymd_hms("2026-06-15T23:59:59")
 ```
 
-```{r sw_depth, fig.width=6.5, fig.height=4, dpi=300}
+``` r
 plt_sw_depth <-
   df_pivot |>
   filter(category == "Stage Gage") |>
@@ -254,7 +297,9 @@ plt_sw_depth <-
 print(plt_sw_depth)
 ```
 
-```{r sw_elev, fig.width=6.5, fig.height=4, dpi=300}
+![](report_figures_files/figure-gfm/sw_depth-1.png)<!-- -->
+
+``` r
 plt_sw_elev <-
   df_pivot |>
   filter(category == "Stage Gage") |>
@@ -286,7 +331,12 @@ plt_sw_elev <-
 print(plt_sw_elev)
 ```
 
-```{r sw_precip, fig.width=6.5, fig.height=4, dpi=300}
+    ## Warning: Removed 20155 rows containing missing values or values outside the scale range
+    ## (`geom_line()`).
+
+![](report_figures_files/figure-gfm/sw_elev-1.png)<!-- -->
+
+``` r
 plt_sw_precip <-
   precip_data |>
   filter(site == "UMC") |>
@@ -311,14 +361,21 @@ plt_sw_precip <-
 print(plt_sw_precip)
 ```
 
-```{r sw_combined, fig.width=6.5, fig.height=8.2, dpi=300}
+![](report_figures_files/figure-gfm/sw_precip-1.png)<!-- -->
+
+``` r
 (plt_sw_precip / plt_sw_depth / plt_sw_elev) +
   plot_layout(heights = c(1, 2, 2), guides = "collect", axes = "collect_x")
 ```
 
-## Specific Figures
+    ## Warning: Removed 20155 rows containing missing values or values outside the scale range
+    ## (`geom_line()`).
 
-```{r, gw_oak_woodland, fig.width=6.5, fig.height=4, dpi=300}
+![](report_figures_files/figure-gfm/sw_combined-1.png)<!-- -->
+
+## 0.4 Specific Figures
+
+``` r
 plt_gw_depth_b4 <-
   df_pivot |>
   filter(category == "Piezometer") |>
@@ -347,7 +404,9 @@ print((plt_gw_precip / plt_gw_depth_b4) +
                     axes = "collect_x"))
 ```
 
-```{r, gw_transitional_wetland, fig.width=6.5, fig.height=4, dpi=300}
+![](report_figures_files/figure-gfm/gw_oak_woodland-1.png)<!-- -->
+
+``` r
 plt_gw_depth_a3 <-
   df_pivot |>
   filter(category == "Piezometer") |>
@@ -376,7 +435,12 @@ print((plt_gw_precip / plt_gw_depth_a3) +
                     axes = "collect_x"))
 ```
 
-```{r, gw_tule_wetland, fig.width=6.5, fig.height=4, dpi=300}
+    ## Warning: Removed 2 rows containing missing values or values outside the scale range
+    ## (`geom_line()`).
+
+![](report_figures_files/figure-gfm/gw_transitional_wetland-1.png)<!-- -->
+
+``` r
 plt_gw_depth_a2_b2 <-
   df_pivot |>
   filter(category == "Piezometer") |>
@@ -405,9 +469,14 @@ print((plt_gw_precip / plt_gw_depth_a2_b2) +
                     axes = "collect_x"))
 ```
 
-## SW-GW Interaction
+    ## Warning: Removed 13 rows containing missing values or values outside the scale range
+    ## (`geom_line()`).
 
-```{r sw_gw_elev, fig.width=6.5, fig.height=4, dpi=300}
+![](report_figures_files/figure-gfm/gw_tule_wetland-1.png)<!-- -->
+
+## 0.5 SW-GW Interaction
+
+``` r
 plt_sw_gw_elev <-
   df_pivot |>
   filter(code %in% c("MC-01", "PZ-C1")) |>
@@ -438,3 +507,8 @@ plt_sw_gw_elev <-
 
 print(plt_sw_gw_elev)
 ```
+
+    ## Warning: Removed 1636 rows containing missing values or values outside the scale range
+    ## (`geom_line()`).
+
+![](report_figures_files/figure-gfm/sw_gw_elev-1.png)<!-- -->
