@@ -36,9 +36,10 @@ jobs:
           echo "Not at the schedule time in PT. Skipping scheduled run."
           exit 0
 
-      - name: Checkout repo
+      - name: Checkout data branch
         uses: actions/checkout@v4
         with:
+          ref: data
           persist-credentials: true
 
       - name: Set up R
@@ -74,4 +75,4 @@ jobs:
           git config user.email "github-actions@github.com"
           git add data/gage_data.rds
           git commit -m "Daily HydroVu refresh" || echo "No changes"
-          git push
+          git push origin HEAD:data

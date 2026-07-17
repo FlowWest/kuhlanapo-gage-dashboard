@@ -6,7 +6,6 @@ library(lubridate)
 library(tidyr)
 library(purrr)
 library(tibble)
-library(stringr)
 
 source(here::here("global.R"))
 
@@ -144,7 +143,7 @@ if (UPDATE_PIEZOMETERS) {
     filter(name %in% gages$name)
 }
 parms <- get_parameter_names(token)# |>
-#filter(parm_name %in% PARM_NAMES)
+  #filter(parm_name %in% PARM_NAMES)
 
 # review the time windows on the existing locations
 locs_with_window <- locs |>
