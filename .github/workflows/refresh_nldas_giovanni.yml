@@ -1,11 +1,11 @@
 name: Refresh NLDAS Giovanni Time Series
 
 on:
-#  schedule:
-#    # 7:XXam Pacific = 14:XX UTC (standard), 15:XX UTC (DST)
-#    # Run twice; script enforces PT time window
-#    - cron: "20 14 * * *"
-#    - cron: "20 15 * * *"
+  schedule:
+    # 7:XXam Pacific = 14:XX UTC (standard), 15:XX UTC (DST)
+    # Run twice; script enforces PT time window
+    - cron: "20 14 * * *"
+    - cron: "20 15 * * *"
   workflow_dispatch:
 
 concurrency:
@@ -49,15 +49,15 @@ jobs:
         uses: r-lib/actions/setup-r-dependencies@v2
         with:
           packages: |
-            httr2
-            readr
-            dplyr
+            tidyverse
             lubridate
-            tibble
+            httr
+            furrr
 
       - name: Fetch NLDAS Giovanni Data
         env:
-          EARTHDATA_TOKEN: ${{ secrets.EARTHDATA_TOKEN }}
+          EARTHDATA_USER: ${{ secrets.EARTHDATA_USER }}
+          EARTHDATA_PASSWORD: ${{ secrets.EARTHDATA_PASSWORD }}
         run: |
           Rscript scripts/fetch_nldas_giovanni.R
 
