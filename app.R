@@ -237,8 +237,10 @@ ui <- fluidPage(
     style = "width: 95vw;",
     
     uiOutput("date_range_selector"),
-    
+
     uiOutput("top_metric_selector"),
+
+    uiOutput("precip_toggle_selector"),
 
     conditionalPanel(
       condition = "input.top_metric == 'gw_depth_ft' || input.top_metric == 'gwe_ft_navd88'",
@@ -334,7 +336,28 @@ server <- function(input, output, session) {
       FALSE
     }
   })
-  
+
+  # In default mode (no mode= param) precip is a user-toggleable checkbox,
+  # seeded from the URL param but overridable once the input renders. In
+  # stage/piezo modes there's no toggle shown, so the URL param always wins.
+  show_precip <- reactive({
+    if (url_mode() == "default") {
+      if (is.null(input$show_precip_input)) url_show_precip() else input$show_precip_input
+    } else {
+      url_show_precip()
+    }
+  })
+
+  output$precip_toggle_selector <- renderUI({
+    req(url_mode() == "default")
+
+    checkboxInput(
+      "show_precip_input",
+      label = "Show Precipitation",
+      value = url_show_precip()
+    )
+  })
+
   output$date_range_selector <- renderUI({
 
     mode <- url_mode()
@@ -500,8 +523,8 @@ server <- function(input, output, session) {
   })
   
   precip_data <- reactive({
-    
-    req(url_show_precip())
+
+    req(show_precip())
 
     if((file.exists(here::here("data/precip_ts.rds"))) && FORCE_LOCAL) {
       message("FORCE_LOCAL is on; using data/precip_ts.rds locally")
@@ -607,7 +630,7 @@ server <- function(input, output, session) {
 
   filtered_precip_df <- reactive({
 
-    req(url_show_precip())
+    req(show_precip())
 
     df <- precip_data()
     # precip is a supplementary layer - if it failed to load (e.g. upstream
@@ -660,8 +683,8 @@ server <- function(input, output, session) {
     min_lake <- 1320.74 # as defined on USGS Clear Lake Lakeport gage
     max_lake <- min_lake + 7.56
     
-    if(url_show_precip()) {
-      precip_df <- filtered_precip_df() |> 
+    if(show_precip()) {
+      precip_df <- filtered_precip_df() |>
         filter(site == "KPD")
     }
     
@@ -825,8 +848,8 @@ server <- function(input, output, session) {
       }
       }
     
-    if(url_show_precip()){    
-    
+    if(show_precip()){
+
       p <- add_trace(
         p,
         x = precip_df$timestamp,           # left edge of the bar
@@ -848,9 +871,9 @@ server <- function(input, output, session) {
     }
       
     y_domain <- if (top_metric()$col %in% c("gw_depth_ft", "gwe_ft_navd88")) {
-      if (url_show_precip()) c(0, 0.825) else c(0, 1)
+      if (show_precip()) c(0, 0.825) else c(0, 1)
     } else {
-      if (url_show_precip()) c(0.3, 0.825) else c(0.3, 1)
+      if (show_precip()) c(0.3, 0.825) else c(0.3, 1)
     }
     
   # add secondary Rumsey axis where relevant
@@ -913,7 +936,7 @@ server <- function(input, output, session) {
       overlaying = "x",
       side = "top"
     ),
-    xaxis3 = if (url_show_precip()) list(
+    xaxis3 = if (show_precip()) list(
       overlaying = "x",
       side = "top"
     ) else NULL,
@@ -928,7 +951,7 @@ server <- function(input, output, session) {
       domain = c(0, 0.3),
       fixedrange = TRUE
     ),
-    yaxis3 = if (url_show_precip()) list(
+    yaxis3 = if (show_precip()) list(
       title = "Hourly Precip (in)",
       domain = c(0.9, 1.0),
       fixedrange = TRUE
