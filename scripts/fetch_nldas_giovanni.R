@@ -23,7 +23,11 @@ BASE_URL <- "https://hydro1.gesdisc.eosdis.nasa.gov/opendap/NLDAS/NLDAS_FORA0125
 GRID_LONS <- seq(-124.9375, -67.0625, 0.125)
 GRID_LATS <- seq(25.0625, 52.9375, 0.125)
 
-NETRC_PATH <- path.expand("~/.netrc")
+NETRC_PATH  <- path.expand("~/.netrc")
+COOKIE_PATH <- tempfile(fileext = ".cookies")  # shared session cookie, established once
+
+# NASA Earthdata caps concurrent connections per account at 5
+MAX_WORKERS <- 5
 
 ## AUTH =======================================================================
 # NLDAS OPeNDAP requires the standard EDL netrc+cookie redirect flow - a plain
@@ -44,6 +48,26 @@ if (nzchar(earthdata_user) && nzchar(earthdata_password)) {
   )
 } else if (!file.exists(NETRC_PATH)) {
   stop("No EARTHDATA_USER/EARTHDATA_PASSWORD in environment, and no ~/.netrc found")
+}
+
+# Do the netrc+redirect handshake once up front and keep the resulting session
+# cookie, rather than repeating the full URS login/redirect on every request -
+# subsequent requests just present this cookie directly.
+establish_session <- function() {
+  probe_url <- build_nldas_url(
+    floor_date(with_tz(Sys.time(), "UTC"), "hour") - INGEST_LAG - hours(1),
+    0, 0
+  )
+  res <- GET(
+    probe_url,
+    config(netrc = TRUE, netrc_file = NETRC_PATH, followlocation = TRUE,
+           cookiefile = COOKIE_PATH, cookiejar = COOKIE_PATH),
+    timeout(60)
+  )
+  if (status_code(res) != 200) {
+    stop("Failed to establish EDL session (HTTP ", status_code(res), ") - check EARTHDATA_USER/EARTHDATA_PASSWORD")
+  }
+  invisible(NULL)
 }
 
 ## GRID HELPERS ================================================================
@@ -74,13 +98,15 @@ parse_rainf_ascii <- function(txt) {
 
 fetch_one_hour <- function(dt, x_idx, y_idx) {
   url <- build_nldas_url(dt, x_idx, y_idx)
-  # give each worker its own cookie file to avoid concurrent-write races
-  cookie_file <- tempfile(fileext = ".cookies")
-  on.exit(unlink(cookie_file), add = TRUE)
+  # read the already-established shared session cookie, but write any
+  # cookie updates to a throwaway per-call file so parallel workers never
+  # write-race the shared one
+  scratch_jar <- tempfile(fileext = ".cookies")
+  on.exit(unlink(scratch_jar), add = TRUE)
   res <- GET(
     url,
     config(netrc = TRUE, netrc_file = NETRC_PATH, followlocation = TRUE,
-           cookiefile = cookie_file, cookiejar = cookie_file),
+           cookiefile = COOKIE_PATH, cookiejar = scratch_jar),
     timeout(60)
   )
   if (status_code(res) != 200) {
@@ -116,7 +142,9 @@ message(
 
 ## FETCH (parallel) =============================================================
 
-plan(multisession, workers = min(8, future::availableCores()))
+establish_session()
+
+plan(multisession, workers = min(MAX_WORKERS, future::availableCores()))
 
 new_data <- precip_sites |>
   mutate(idx = map2(lon, lat, nearest_idx)) |>
