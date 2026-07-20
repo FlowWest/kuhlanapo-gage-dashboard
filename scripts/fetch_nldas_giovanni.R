@@ -1,7 +1,9 @@
 library(tidyverse)
 library(lubridate)
-library(httr2)
-library(readr)
+library(httr)
+library(furrr)
+
+## CONFIG =====================================================================
 
 rds_path <- here::here("data/precip_ts.rds")
 
@@ -11,86 +13,148 @@ precip_sites <- tibble::tribble(
   "UMC", "Upper Manning Creek at Hwy 175",   38.995516, -122.934703
 )
 
-start_time <- "2025-12-01T00:00:00"
-end_time   <- format(Sys.time(), "%Y-%m-%dT%H:%M:%S")  # "2026-02-09T00:00:00"
-data_var   <- "NLDAS_FORA0125_H_2_0_Rainf"
-version    <- "2.0"
+MIN_START_DATE <- as.POSIXct("2025-12-01 00:00:00", tz = "UTC")
+OVERLAP_HOURS  <- 48   # safety overlap when resuming from existing data
+INGEST_LAG     <- days(6)  # NLDAS near-real-time files run ~5 days behind Sys.time()
 
-# downloaded in the browser for now
-# https://api.giovanni.earthdata.nasa.gov/proxy-timeseries?data=NLDAS_FORA0125_H_2_0_Rainf&location=[39.024924,-122.906493]&time=2025-12-01T00:00:00/2026-02-09T00:00:00&version=2.0
-# https://api.giovanni.earthdata.nasa.gov/proxy-timeseries?data=NLDAS_FORA0125_H_2_0_Rainf&location=[38.995516,-122.934703]&time=2025-12-01T00:00:00/2026-02-09T00:00:00&version=2.0
+BASE_URL <- "https://hydro1.gesdisc.eosdis.nasa.gov/opendap/NLDAS/NLDAS_FORA0125_H.2.0"
 
-USE_LOCAL <- F
+# NLDAS_FORA0125 native grid (see batch_download_nldas.R in interoperable-flows)
+GRID_LONS <- seq(-124.9375, -67.0625, 0.125)
+GRID_LATS <- seq(25.0625, 52.9375, 0.125)
 
-if(USE_LOCAL) {
-  
-  filepaths <- list(
-    "KPD" = here::here("data-raw/timeseries_giovanni/timeseries_kpd.txt"),
-    "UMC" = here::here("data-raw/timeseries_giovanni/timeseries_umc.txt")
+NETRC_PATH <- path.expand("~/.netrc")
+
+## AUTH =======================================================================
+# NLDAS OPeNDAP requires the standard EDL netrc+cookie redirect flow - a plain
+# Authorization: Bearer <token> header (as the old Giovanni proxy script used)
+# gets a 401 here, so this needs EARTHDATA_USER / EARTHDATA_PASSWORD instead.
+
+earthdata_user <- Sys.getenv("EARTHDATA_USER")
+earthdata_password <- Sys.getenv("EARTHDATA_PASSWORD")
+
+if (nzchar(earthdata_user) && nzchar(earthdata_password)) {
+  writeLines(
+    c(
+      "machine urs.earthdata.nasa.gov",
+      paste("login", earthdata_user),
+      paste("password", earthdata_password)
+    ),
+    NETRC_PATH
   )
-  
-  
-  precip_ts <- filepaths |> 
-    lapply(\(x) read_csv(x, skip = 16, col_names = c("timestamp_utc", "rainf_kg_m2"))) |>
-    bind_rows(.id = "site")  |>
-    rename(precip_mm = rainf_kg_m2) |>
-    mutate(precip_in = precip_mm / 25.4,
-           timestamp = timestamp_utc |> with_tz("America/Los_Angeles"))
-  
-  precip_ts |> saveRDS(rds_path)
-
-} else {
-  
-  bearer_token <- Sys.getenv("EARTHDATA_TOKEN")
-  if (bearer_token == "") stop("EARTHDATA_TOKEN not set in environment!")
-  
-  # todo - convert to programmatic via
-  # https://disc.gsfc.nasa.gov/information/documents?title=Giovanni%20In%20The%20Cloud:%20Time%20Series%20Service
-  # https://disc.gsfc.nasa.gov/information/howto?title=How%20to%20Access%20the%20%22Giovanni%20in%20the%20Cloud:%20Time%20Series%22%20Service%20Using%20Python
-  
-  pull_giovanni_timeseries <- function(lat, lon, start_time, end_time) {
-    url <- paste0(
-      "https://api.giovanni.earthdata.nasa.gov/timeseries?",
-      "data=", data_var,
-      "&location=[", lat, ",", lon, "]",
-      "&time=", start_time, "/", end_time,
-      "&version=", version
-    )
-    
-    req <- request(url) |>
-      req_headers(authorization = paste("Bearer", bearer_token))
-    
-    resp <- req_perform(req)
-    if (resp_status(resp) != 200) {
-      stop("Failed to fetch data: ", resp_status(resp))
-    }
-    
-    ctype <- resp_header(resp, "Content-Type")
-    if (!grepl("text/csv|application/json", ctype)) {
-      stop("Unexpected content type: ", ctype, "\nResponse may be HTML, not data")
-    }
-    
-    resp_body_string(resp) |>
-      read_csv(skip = 16, col_names = c("timestamp_utc", "precip_mm"))
-  }
-  
-  precip_ts <- precip_sites |>
-    mutate(data = pmap(list(lat, lon), ~ pull_giovanni_timeseries(..1, ..2, start_time, end_time))) |>
-    select(id, data) |>
-    unnest(data) |>
-    rename(site = id) |>
-    mutate(
-      precip_in = precip_mm / 25.4,
-      timestamp = timestamp_utc |> with_tz("America/Los_Angeles")
-    )
-  
-  if (file.exists(rds_path)) {
-    existing <- readRDS(rds_path)
-    combined <- bind_rows(existing, precip_ts) |> distinct()
-  } else {
-    combined <- precip_ts
-  }
-  
-  combined |> saveRDS(rds_path)
-  
+} else if (!file.exists(NETRC_PATH)) {
+  stop("No EARTHDATA_USER/EARTHDATA_PASSWORD in environment, and no ~/.netrc found")
 }
+
+## GRID HELPERS ================================================================
+
+nearest_idx <- function(lon, lat) {
+  list(
+    x = which.min(abs(GRID_LONS - lon)) - 1L,  # OPeNDAP indices are 0-based
+    y = which.min(abs(GRID_LATS - lat)) - 1L
+  )
+}
+
+build_nldas_url <- function(dt, x_idx, y_idx) {
+  yyyy     <- format(dt, "%Y")
+  doy      <- sprintf("%03d", as.integer(format(dt, "%j")))
+  yyyymmdd <- format(dt, "%Y%m%d")
+  hhhh     <- sprintf("%02d00", as.integer(format(dt, "%H")))
+  sprintf(
+    "%s/%s/%s/NLDAS_FORA0125_H.A%s.%s.020.nc.ascii?Rainf[0:1:0][%d][%d]",
+    BASE_URL, yyyy, doy, yyyymmdd, hhhh, y_idx, x_idx
+  )
+}
+
+parse_rainf_ascii <- function(txt) {
+  last_line <- tail(str_split(str_trim(txt), "\n")[[1]], 1)
+  val <- str_extract(last_line, "-?[0-9.eE+-]+$")
+  as.numeric(val)
+}
+
+fetch_one_hour <- function(dt, x_idx, y_idx) {
+  url <- build_nldas_url(dt, x_idx, y_idx)
+  # give each worker its own cookie file to avoid concurrent-write races
+  cookie_file <- tempfile(fileext = ".cookies")
+  on.exit(unlink(cookie_file), add = TRUE)
+  res <- GET(
+    url,
+    config(netrc = TRUE, netrc_file = NETRC_PATH, followlocation = TRUE,
+           cookiefile = cookie_file, cookiejar = cookie_file),
+    timeout(60)
+  )
+  if (status_code(res) != 200) {
+    return(NA_real_)
+  }
+  parse_rainf_ascii(content(res, "text", encoding = "UTF-8"))
+}
+
+safe_fetch_one_hour <- possibly(fetch_one_hour, otherwise = NA_real_, quiet = TRUE)
+
+## DETERMINE FETCH WINDOW ======================================================
+
+existing <- if (file.exists(rds_path)) readRDS(rds_path) else NULL
+
+start_ts <- if (!is.null(existing) && nrow(existing) > 0) {
+  max(existing$timestamp_utc, na.rm = TRUE) - hours(OVERLAP_HOURS)
+} else {
+  MIN_START_DATE
+}
+start_ts <- max(start_ts, MIN_START_DATE)
+end_ts <- floor_date(with_tz(Sys.time(), "UTC"), "hour") - INGEST_LAG
+
+if (start_ts >= end_ts) {
+  message("Nothing new to fetch")
+  quit(status = 0)
+}
+
+hours_seq <- seq(start_ts, end_ts, by = "1 hour")
+message(
+  "Fetching ", length(hours_seq), " hours x ", nrow(precip_sites),
+  " sites from ", start_ts, " to ", end_ts
+)
+
+## FETCH (parallel) =============================================================
+
+plan(multisession, workers = min(8, future::availableCores()))
+
+new_data <- precip_sites |>
+  mutate(idx = map2(lon, lat, nearest_idx)) |>
+  select(id, idx) |>
+  pmap(function(id, idx) {
+    tibble(
+      site = id,
+      timestamp_utc = hours_seq,
+      precip_mm = future_map_dbl(
+        hours_seq,
+        ~ safe_fetch_one_hour(.x, idx$x, idx$y),
+        .options = furrr_options(seed = TRUE)
+      )
+    )
+  }) |>
+  bind_rows() |>
+  filter(!is.na(precip_mm)) |>
+  mutate(
+    precip_in = precip_mm / 25.4,
+    timestamp = with_tz(timestamp_utc, "America/Los_Angeles")
+  )
+
+plan(sequential)
+
+if (nrow(new_data) == 0) {
+  message("No new data returned")
+  quit(status = 0)
+}
+
+## MERGE + DEDUPLICATE + SAVE ===================================================
+
+combined <- if (!is.null(existing)) {
+  bind_rows(existing, new_data) |>
+    distinct(site, timestamp_utc, .keep_all = TRUE) |>
+    arrange(site, timestamp_utc)
+} else {
+  new_data |> arrange(site, timestamp_utc)
+}
+
+saveRDS(combined, rds_path)
+message("Saved ", nrow(combined), " total precip records")
