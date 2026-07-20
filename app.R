@@ -233,7 +233,7 @@ ui <- fluidPage(
   .precip-toggle-wrap {
     display: flex;
     align-items: center;
-    height: 34px;
+    height: 30px;
     gap: 8px;
   }
   .precip-toggle-wrap .shiny-input-container {
@@ -362,15 +362,21 @@ server <- function(input, output, session) {
     req(url_mode() == "default")
 
     tags$div(
-      class = "precip-toggle-wrap",
-      shinyWidgets::switchInput(
-        inputId = "show_precip_input",
-        value = url_show_precip(),
-        size = "mini",
-        onStatus = "primary",
-        offStatus = "default"
-      ),
-      tags$span("Show Precipitation")
+      class = "form-group",
+      # matches the empty control-label every other toolbar widget renders
+      # above its control, so this row lines up with them vertically
+      tags$label(class = "control-label"),
+      tags$div(
+        class = "precip-toggle-wrap",
+        shinyWidgets::switchInput(
+          inputId = "show_precip_input",
+          value = url_show_precip(),
+          size = "mini",
+          onStatus = "primary",
+          offStatus = "default"
+        ),
+        tags$span("Show Precipitation")
+      )
     )
   })
 
@@ -764,7 +770,14 @@ server <- function(input, output, session) {
       max_y <- switch(input$top_metric,
                       "depth" = max(base_df[[ycol]], na.rm=T),
                       "wse_ft_navd88" = max(base_df[[ycol]], na.rm=T))
-      
+
+      # a zero-span range (e.g. all depths reading exactly 0 in the dry
+      # season) is invalid for plotly and silently falls back to an
+      # autoranged +/-1 window, which pulls the axis below zero
+      if (input$top_metric == "depth" && (!is.finite(max_y) || max_y <= min_y)) {
+        max_y <- min_y + 0.1
+      }
+
       # ---- Surface water depth/WSE traces ----
       for (s in sites_stage$code) {
         df_s <- base_df |> filter(code == s)
@@ -865,6 +878,12 @@ server <- function(input, output, session) {
       }
     
     if(show_precip()){
+
+      precip_max <- if (nrow(precip_df) > 0) max(precip_df$precip_in, na.rm = TRUE) else 0
+      if (!is.finite(precip_max)) precip_max <- 0
+      # floor the top of the range so an all-zero (no rain) window doesn't
+      # collapse to a zero-span axis, which plotly autoranges below zero
+      precip_axis_max <- max(precip_max * 1.1, 0.1)
 
       p <- add_trace(
         p,
@@ -970,7 +989,8 @@ server <- function(input, output, session) {
     yaxis3 = if (show_precip()) list(
       title = "Hourly Precip (in)",
       domain = c(0.9, 1.0),
-      fixedrange = TRUE
+      fixedrange = TRUE,
+      range = c(0, precip_axis_max)
     ) else NULL,
     legend = list(
       orientation = "h",
