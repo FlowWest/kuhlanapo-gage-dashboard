@@ -230,6 +230,16 @@ ui <- fluidPage(
   .flow-fullwidth > * {
     width: auto !important;
   }
+  .precip-toggle-wrap {
+    display: flex;
+    align-items: center;
+    height: 34px;
+    gap: 8px;
+  }
+  .precip-toggle-wrap .shiny-input-container {
+    width: auto !important;
+    margin-bottom: 0;
+  }
 ")),
   
   flowLayout(
@@ -351,10 +361,16 @@ server <- function(input, output, session) {
   output$precip_toggle_selector <- renderUI({
     req(url_mode() == "default")
 
-    checkboxInput(
-      "show_precip_input",
-      label = "Show Precipitation",
-      value = url_show_precip()
+    tags$div(
+      class = "precip-toggle-wrap",
+      shinyWidgets::switchInput(
+        inputId = "show_precip_input",
+        value = url_show_precip(),
+        size = "mini",
+        onStatus = "primary",
+        offStatus = "default"
+      ),
+      tags$span("Show Precipitation")
     )
   })
 
