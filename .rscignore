@@ -1,7 +1,7 @@
-.github/
-scripts/
-data-raw/prep_idw_grid.R
-data-raw/report_figures.Rmd
-data/gage_data.rds
-data/usgs_lake_level_11450000.rds
-rsconnect/
+.github
+scripts
+rsconnect
+.claude
+.cache
+.Renviron
+.RData
