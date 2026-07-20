@@ -225,8 +225,37 @@ refresh_cache_async <- function(cache_lock_file, rds_url) {
 ## UI ==========================================================================
 
 ui <- fluidPage(
-  
+
   tags$style(HTML("
+  html, body {
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+  }
+  /* Pins toolbar + plot to exactly 100% of the iframe's own viewport height,
+     so the plot area (flex: 1) always takes 'whatever's left' after the
+     toolbar instead of a fixed vh fraction. A fixed vh fraction plus a
+     toolbar on top of it is always > 100% of the container, which is what
+     was forcing an internal scrollbar when embedded in a fixed-height iframe. */
+  .app-flex-col {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+  }
+  .app-toolbar {
+    flex: 0 0 auto;
+  }
+  .app-plot-area {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .app-plot-area > div {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: 100%;
+  }
   .flow-fullwidth > * {
     width: auto !important;
   }
@@ -241,61 +270,66 @@ ui <- fluidPage(
     margin-bottom: 0;
   }
 ")),
-  
-  flowLayout(
-    class = "flow-fullwidth",
-    style = "width: 95vw;",
-    
-    uiOutput("date_range_selector"),
 
-    uiOutput("top_metric_selector"),
+  div(
+    class = "app-flex-col",
 
-    uiOutput("precip_toggle_selector"),
+    div(
+      class = "app-toolbar",
+      flowLayout(
+        class = "flow-fullwidth",
+        style = "width: 95vw;",
 
-    conditionalPanel(
-      condition = "input.top_metric == 'gw_depth_ft' || input.top_metric == 'gwe_ft_navd88'",
-      
-      shinyWidgets::radioGroupButtons(
-        "transect_select",
-        label = "",
-        choices = c(
-          "All Transects" = "all",
-          "A" = "A",
-          "B" = "B",
-          "C" = "C"
+        uiOutput("date_range_selector"),
+
+        uiOutput("top_metric_selector"),
+
+        conditionalPanel(
+          condition = "input.top_metric == 'gw_depth_ft' || input.top_metric == 'gwe_ft_navd88'",
+
+          shinyWidgets::radioGroupButtons(
+            "transect_select",
+            label = "",
+            choices = c(
+              "All Transects" = "all",
+              "A" = "A",
+              "B" = "B",
+              "C" = "C"
+            ),
+            selected = "all",
+            size = "sm"
+          )
         ),
-        selected = "all",
-        size = "sm"
+
+        uiOutput("precip_toggle_selector"),
+
+        conditionalPanel(
+          condition = "input.top_metric == 'gw_contour'",
+          sliderInput(
+            "gw_time",
+            "",
+            min = as.POSIXct("2025-12-09 00:00", tz = "America/Los_Angeles"),
+            max = as.POSIXct("2026-02-03 23:59", tz = "America/Los_Angeles"),
+            value = as.POSIXct("2026-01-01 00:00", tz = "America/Los_Angeles"),
+            timeFormat = "%Y-%m-%d %H:%M",
+            step = 900, # 1 hour steps
+            animate = FALSE,
+            ticks = FALSE,
+            width = "300px"
+          )
+        )
       )
     ),
-    
-    conditionalPanel(
-      condition = "input.top_metric == 'gw_contour'",
-      sliderInput(
-        "gw_time",
-        "",
-        min = as.POSIXct("2025-12-09 00:00", tz = "America/Los_Angeles"), 
-        max = as.POSIXct("2026-02-03 23:59", tz = "America/Los_Angeles"),
-        value = as.POSIXct("2026-01-01 00:00", tz = "America/Los_Angeles"),
-        timeFormat = "%Y-%m-%d %H:%M",
-        step = 900, # 1 hour steps
-        animate = FALSE,
-        ticks = FALSE,
-        width = "300px"
-      )
-    )
-  ),
-  
-  fluidRow(
-    column(
-      12,
+
+    div(
+      class = "app-plot-area",
       conditionalPanel(
         condition = "input.top_metric == 'gw_contour'",
-        plotOutput("gw_contour_plot", height = "80vh")
+        plotOutput("gw_contour_plot", height = "100%")
       ),
       conditionalPanel(
         condition = "input.top_metric != 'gw_contour'",
-        plotlyOutput("combined_plot", height = "90vh")
+        plotlyOutput("combined_plot", height = "100%")
       )
     )
   )
