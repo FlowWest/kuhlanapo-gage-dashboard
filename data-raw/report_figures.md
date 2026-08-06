@@ -1,7 +1,7 @@
 Kuhlanapo Gage Data Figures for Reports
 ================
 Skyler Lewis
-2026-07-21
+2026-08-06
 
 - [0.1 Import Data](#01-import-data)
 - [0.2 Groundwater Study](#02-groundwater-study)
@@ -117,15 +117,15 @@ plt_gw_elev <-
   df_pivot |>
   filter(category == "Piezometer") |>
   filter(timestamp >= ymd("2025-12-05")) |>
-  filter(timestamp < ymd("2026-02-05")) |>
+  filter(timestamp < Sys.Date()) |>
   ggplot(aes(x = timestamp, y = gwe_ft_navd88)) +
-  geom_line(data = ll_data |> filter(timestamp < ymd("2026-02-05")), 
+  geom_line(data = ll_data |> filter(timestamp < Sys.Date()),
             aes(y = value, linetype = "Lake Level")) +
   geom_line(aes(color = code)) +
   geom_hline(aes(yintercept = rumsey_to_navd88_usgs(7.56),
                  linetype = "Full Lake")) +
   scale_x_datetime(name = "",
-                   date_breaks = "1 week",
+                   date_breaks = "1 month",
                    expand = c(0, 0)) +
   scale_y_continuous(name = "Elevation (ft NAVD88)",
                      breaks = scales::breaks_width(1),
@@ -143,6 +143,9 @@ plt_gw_elev <-
 print(plt_gw_elev)
 ```
 
+    ## Warning: Removed 62 rows containing missing values or values outside the scale range
+    ## (`geom_line()`).
+
 ![](report_figures_files/figure-gfm/gw_elev-1.png)<!-- -->
 
 ``` r
@@ -150,13 +153,13 @@ plt_gw_depth <-
   df_pivot |>
   filter(category == "Piezometer") |>
   filter(timestamp >= ymd("2025-12-05")) |>
-  filter(timestamp < ymd("2026-02-05")) |>
+  filter(timestamp < Sys.Date()) |>
   ggplot(aes(x = timestamp, y = gw_depth_ft)) +
   geom_line(aes(color = code)) +
   geom_hline(aes(yintercept = 0,
                  linetype = "Ground")) +
   scale_x_datetime(name = "",
-                   date_breaks = "1 week",
+                   date_breaks = "1 month",
                    expand = c(0, 0)) +
   scale_y_reverse(name = "Depth Below Ground Surface (ft)",
                   breaks = scales::breaks_width(1)) +
@@ -170,6 +173,9 @@ plt_gw_depth <-
 print(plt_gw_depth)
 ```
 
+    ## Warning: Removed 62 rows containing missing values or values outside the scale range
+    ## (`geom_line()`).
+
 ![](report_figures_files/figure-gfm/gw_depth-1.png)<!-- -->
 
 ``` r
@@ -177,7 +183,7 @@ plt_gw_precip <-
   precip_data |>
   filter(site == "KPD") |>
   filter(timestamp >= ymd("2025-12-05")) |>
-  filter(timestamp < ymd("2026-02-05")) |>
+  filter(timestamp < Sys.Date()) |>
   ggplot() +
   geom_hline(yintercept = 0) +
   geom_rect(aes(xmin = timestamp,
@@ -185,7 +191,7 @@ plt_gw_precip <-
                 ymin = 0,
                 ymax = precip_in)) +
   scale_x_datetime(name = "",
-                 date_breaks = "1 week",
+                 date_breaks = "1 month",
                  expand = c(0, 0)) +
   scale_y_continuous(name = "Precipitation (in)",
                      breaks = scales::breaks_width(0.1),
@@ -203,6 +209,11 @@ print(plt_gw_precip)
   plot_layout(heights = c(1, 2, 2), guides = "collect", axes = "collect_x")
 ```
 
+    ## Warning: Removed 62 rows containing missing values or values outside the scale range
+    ## (`geom_line()`).
+    ## Removed 62 rows containing missing values or values outside the scale range
+    ## (`geom_line()`).
+
 ![](report_figures_files/figure-gfm/gw_combined-1.png)<!-- -->
 
 ## 0.3 Surface Water
@@ -212,7 +223,7 @@ plt_sw_depth <-
   df_pivot |>
   filter(category == "Stage Gage") |>
   filter(timestamp >= ymd("2025-12-05")) |>
-  filter(timestamp < ymd("2026-04-30")) |>
+  filter(timestamp < Sys.Date()) |>
   ggplot(aes(x = timestamp, y = depth)) +
   geom_line(aes(color = code)) +
   scale_x_datetime(name = "",
@@ -239,9 +250,9 @@ plt_sw_elev <-
   df_pivot |>
   filter(category == "Stage Gage") |>
   filter(timestamp >= ymd("2025-12-05")) |>
-  filter(timestamp < ymd("2026-04-30")) |>
+  filter(timestamp < Sys.Date()) |>
   ggplot(aes(x = timestamp, y = wse_ft_navd88)) +
-  geom_line(data = ll_data |> filter(timestamp < ymd("2026-04-30")), 
+  geom_line(data = ll_data |> filter(timestamp < Sys.Date()),
             aes(y = value, linetype = "Lake Level")) +
   geom_line(aes(color = code)) +
   geom_hline(aes(yintercept = rumsey_to_navd88_usgs(7.56),
@@ -265,7 +276,7 @@ plt_sw_elev <-
 print(plt_sw_elev)
 ```
 
-    ## Warning: Removed 10730 rows containing missing values or values outside the scale range
+    ## Warning: Removed 34790 rows containing missing values or values outside the scale range
     ## (`geom_line()`).
 
 ![](report_figures_files/figure-gfm/sw_elev-1.png)<!-- -->
@@ -275,7 +286,7 @@ plt_sw_precip <-
   precip_data |>
   filter(site == "UMC") |>
   filter(timestamp >= ymd("2025-12-05")) |>
-  filter(timestamp < ymd("2026-04-30")) |>
+  filter(timestamp < Sys.Date()) |>
   ggplot() +
   geom_hline(yintercept = 0) +
   geom_rect(aes(xmin = timestamp,
@@ -304,7 +315,7 @@ print(plt_sw_precip)
     ## Warning: Removed 37 rows containing missing values or values outside the scale range
     ## (`geom_line()`).
 
-    ## Warning: Removed 10730 rows containing missing values or values outside the scale range
+    ## Warning: Removed 34790 rows containing missing values or values outside the scale range
     ## (`geom_line()`).
 
 ![](report_figures_files/figure-gfm/sw_combined-1.png)<!-- -->
