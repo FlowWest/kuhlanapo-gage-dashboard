@@ -216,3 +216,32 @@ interpolate_idw_at_time <- function(
   }
 }
 
+# Null out piezometer depth readings that don't line up with their nearest
+# in-time neighbor -- caused by trolls being pulled from the well for
+# periodic data download/recalibration, which shows up as either a single
+# round-trip dip/spike or a step change with one bad transition reading.
+# A neighbor only counts if it's within `max_gap_min`, so genuine drift
+# across a real data gap (sensor offline, not just misreading) isn't flagged.
+# `timestamp`/`depth` must be ordered by time within one piezometer's series.
+clean_piezo_depth <- function(timestamp, depth, hard_max = 18,
+                               jump_thresh = 1, max_gap_min = 60) {
+  dt_lag  <- as.numeric(difftime(timestamp, lag(timestamp),  units = "mins"))
+  dt_lead <- as.numeric(difftime(lead(timestamp), timestamp, units = "mins"))
+  lag_d   <- lag(depth)
+  lead_d  <- lead(depth)
+
+  close_lag  <- !is.na(dt_lag)  & dt_lag  <= max_gap_min
+  close_lead <- !is.na(dt_lead) & dt_lead <= max_gap_min
+
+  ok_via_lag  <- close_lag  & !is.na(lag_d)  & lag_d  <= hard_max & abs(depth - lag_d)  <= jump_thresh
+  ok_via_lead <- close_lead & !is.na(lead_d) & lead_d <= hard_max & abs(depth - lead_d) <= jump_thresh
+  no_close_neighbor <- !close_lag & !close_lead
+
+  case_when(
+    depth > hard_max ~ NA_real_,
+    no_close_neighbor ~ depth,
+    !ok_via_lag & !ok_via_lead ~ NA_real_,
+    TRUE ~ depth
+  )
+}
+

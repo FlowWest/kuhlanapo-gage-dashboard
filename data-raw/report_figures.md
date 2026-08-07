@@ -1,7 +1,7 @@
 Kuhlanapo Gage Data Figures for Reports
 ================
 Skyler Lewis
-2026-08-06
+2026-08-07
 
 - [0.1 Import Data](#01-import-data)
 - [0.2 Groundwater Study](#02-groundwater-study)
@@ -90,13 +90,11 @@ df_pivot <- ts_data |>
       # correct piezometer for well depth and calculate piezometer GWE
       inner_join(sensors |> filter(type == "troll") |> select(code, name), by = join_by(code)) |>
       left_join(piezo_meta |> select(name, gse_ft_navd88, tdx_ft_navd88), by = join_by(name)) |>
-      # smooth spikes of length one in groundwater depth, eliminate other spikes
+      # remove piezometer depth readings caused by trolls being pulled from
+      # the well for maintenance (see clean_piezo_depth() in global.R)
       group_by(category, site) |>
       mutate(depth = if_else(category == "Piezometer",
-                             case_when((timestamp == min(timestamp)) ~ lead(depth),
-                                       (abs(depth - lag(depth)) > 3) & (abs(depth - lead(depth)) > 3) ~ (lag(depth) + lead(depth)) / 2,
-                                       (depth > 18) ~ NA,
-                                       TRUE ~ depth),
+                             clean_piezo_depth(timestamp, depth),
                              depth)) |>
       ungroup() |>
       # calculate groundwater elevation
@@ -143,7 +141,7 @@ plt_gw_elev <-
 print(plt_gw_elev)
 ```
 
-    ## Warning: Removed 62 rows containing missing values or values outside the scale range
+    ## Warning: Removed 64 rows containing missing values or values outside the scale range
     ## (`geom_line()`).
 
 ![](report_figures_files/figure-gfm/gw_elev-1.png)<!-- -->
@@ -173,7 +171,7 @@ plt_gw_depth <-
 print(plt_gw_depth)
 ```
 
-    ## Warning: Removed 62 rows containing missing values or values outside the scale range
+    ## Warning: Removed 64 rows containing missing values or values outside the scale range
     ## (`geom_line()`).
 
 ![](report_figures_files/figure-gfm/gw_depth-1.png)<!-- -->
@@ -209,9 +207,9 @@ print(plt_gw_precip)
   plot_layout(heights = c(1, 2, 2), guides = "collect", axes = "collect_x")
 ```
 
-    ## Warning: Removed 62 rows containing missing values or values outside the scale range
+    ## Warning: Removed 64 rows containing missing values or values outside the scale range
     ## (`geom_line()`).
-    ## Removed 62 rows containing missing values or values outside the scale range
+    ## Removed 64 rows containing missing values or values outside the scale range
     ## (`geom_line()`).
 
 ![](report_figures_files/figure-gfm/gw_combined-1.png)<!-- -->
@@ -276,7 +274,7 @@ plt_sw_elev <-
 print(plt_sw_elev)
 ```
 
-    ## Warning: Removed 34790 rows containing missing values or values outside the scale range
+    ## Warning: Removed 34847 rows containing missing values or values outside the scale range
     ## (`geom_line()`).
 
 ![](report_figures_files/figure-gfm/sw_elev-1.png)<!-- -->
@@ -315,7 +313,7 @@ print(plt_sw_precip)
     ## Warning: Removed 37 rows containing missing values or values outside the scale range
     ## (`geom_line()`).
 
-    ## Warning: Removed 34790 rows containing missing values or values outside the scale range
+    ## Warning: Removed 34847 rows containing missing values or values outside the scale range
     ## (`geom_line()`).
 
 ![](report_figures_files/figure-gfm/sw_combined-1.png)<!-- -->

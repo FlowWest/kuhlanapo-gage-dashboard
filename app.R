@@ -647,13 +647,11 @@ server <- function(input, output, session) {
       # correct piezometer for well depth and calculate piezometer GWE
       inner_join(sensors |> filter(type == "troll") |> select(code, name), by = join_by(code)) |>
       left_join(piezo_meta |> select(name, gse_ft_navd88, tdx_ft_navd88), by = join_by(name)) |>
-      # smooth spikes of length one in groundwater depth, eliminate other spikes
+      # remove piezometer depth readings caused by trolls being pulled from
+      # the well for maintenance (see clean_piezo_depth() in global.R)
       group_by(category, site) |>
       mutate(depth = if_else(category == "Piezometer",
-                             case_when((timestamp == min(timestamp)) ~ lead(depth),
-                                       (abs(depth - lag(depth)) > 3) & (abs(depth - lead(depth)) > 3) ~ (lag(depth) + lead(depth)) / 2,
-                                       (depth > 18) ~ NA,
-                                       TRUE ~ depth),
+                             clean_piezo_depth(timestamp, depth),
                              depth)) |>
       ungroup() |>
       # calculate groundwater elevation
