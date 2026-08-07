@@ -643,62 +643,10 @@ Figures for Reports</h1>
 <div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a>ts_data <span class="ot">&lt;-</span>  <span class="fu">readRDS</span>(here<span class="sc">::</span><span class="fu">here</span>(<span class="st">&quot;data&quot;</span>, <span class="st">&quot;gage_data.Rds&quot;</span>)) </span>
 <span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a>ll_data <span class="ot">&lt;-</span> <span class="fu">readRDS</span>(here<span class="sc">::</span><span class="fu">here</span>(<span class="st">&quot;data/usgs_lake_level_11450000.rds&quot;</span>))</span>
 <span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a>precip_data <span class="ot">&lt;-</span> <span class="fu">readRDS</span>(here<span class="sc">::</span><span class="fu">here</span>(<span class="st">&quot;data/precip_ts.rds&quot;</span>))</span></code></pre></div>
-<p>Apply data cleaning, exactly duplicating the procedure in
-<code>app.R</code></p>
-<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a>df_pivot <span class="ot">&lt;-</span> ts_data <span class="sc">|&gt;</span></span>
-<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a>      <span class="fu">inner_join</span>(sites <span class="sc">|&gt;</span> <span class="fu">select</span>(code, category)) <span class="sc">|&gt;</span></span>
-<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a>      <span class="fu">filter</span>(parm_name <span class="sc">%in%</span> <span class="fu">c</span>(<span class="st">&quot;Depth&quot;</span>, <span class="st">&quot;Temperature&quot;</span>)) <span class="sc">|&gt;</span></span>
-<span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a>      <span class="fu">mutate</span>(<span class="at">parm_name_modified =</span> <span class="fu">case_when</span>(</span>
-<span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a>        parm_name <span class="sc">==</span> <span class="st">&quot;Temperature&quot;</span> <span class="sc">&amp;</span> type <span class="sc">==</span> <span class="st">&quot;vulink&quot;</span> <span class="sc">~</span> <span class="st">&quot;Air Temperature&quot;</span>,</span>
-<span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a>        parm_name <span class="sc">==</span> <span class="st">&quot;Temperature&quot;</span> <span class="sc">~</span> <span class="st">&quot;Water Temperature&quot;</span>,</span>
-<span id="cb3-7"><a href="#cb3-7" tabindex="-1"></a>        <span class="cn">TRUE</span> <span class="sc">~</span> parm_name</span>
-<span id="cb3-8"><a href="#cb3-8" tabindex="-1"></a>      )) <span class="sc">|&gt;</span></span>
-<span id="cb3-9"><a href="#cb3-9" tabindex="-1"></a>      <span class="co"># convert units. also, depth readings less than zero are invalid</span></span>
-<span id="cb3-10"><a href="#cb3-10" tabindex="-1"></a>      <span class="fu">mutate</span>(<span class="at">value =</span> <span class="fu">case_when</span>(</span>
-<span id="cb3-11"><a href="#cb3-11" tabindex="-1"></a>        parm_name <span class="sc">==</span> <span class="st">&quot;Depth&quot;</span> <span class="sc">~</span> <span class="fu">if_else</span>(value <span class="sc">&gt;</span> <span class="dv">0</span>, value <span class="sc">/</span> <span class="fl">0.3048</span>, <span class="dv">0</span>),</span>
-<span id="cb3-12"><a href="#cb3-12" tabindex="-1"></a>        parm_name <span class="sc">==</span> <span class="st">&quot;Temperature&quot;</span> <span class="sc">~</span> value <span class="sc">*</span> <span class="dv">9</span> <span class="sc">/</span> <span class="dv">5</span> <span class="sc">+</span> <span class="dv">32</span></span>
-<span id="cb3-13"><a href="#cb3-13" tabindex="-1"></a>      )) <span class="sc">|&gt;</span></span>
-<span id="cb3-14"><a href="#cb3-14" tabindex="-1"></a>      <span class="fu">select</span>(category, code, site, timestamp, parm_name_modified, value) <span class="sc">|&gt;</span></span>
-<span id="cb3-15"><a href="#cb3-15" tabindex="-1"></a>      <span class="fu">pivot_wider</span>(<span class="at">names_from =</span> parm_name_modified, <span class="at">values_from =</span> value) <span class="sc">|&gt;</span></span>
-<span id="cb3-16"><a href="#cb3-16" tabindex="-1"></a>      <span class="fu">clean_names</span>() <span class="sc">|&gt;</span></span>
-<span id="cb3-17"><a href="#cb3-17" tabindex="-1"></a>      <span class="co"># if troll is freezing, depth reading is invalid</span></span>
-<span id="cb3-18"><a href="#cb3-18" tabindex="-1"></a>      <span class="fu">group_by</span>(category, code, site) <span class="sc">|&gt;</span></span>
-<span id="cb3-19"><a href="#cb3-19" tabindex="-1"></a>      <span class="fu">mutate</span>(<span class="at">depth =</span> <span class="fu">if_else</span>((water_temperature <span class="sc">&gt;</span> <span class="dv">32</span>) <span class="sc">&amp;</span> </span>
-<span id="cb3-20"><a href="#cb3-20" tabindex="-1"></a>                               <span class="fu">coalesce</span>(<span class="fu">lag</span>(water_temperature) <span class="sc">&gt;</span> <span class="dv">32</span>, <span class="cn">TRUE</span>), </span>
-<span id="cb3-21"><a href="#cb3-21" tabindex="-1"></a>                             depth, <span class="cn">NA</span>)) <span class="sc">|&gt;</span></span>
-<span id="cb3-22"><a href="#cb3-22" tabindex="-1"></a>      <span class="fu">ungroup</span>() <span class="sc">|&gt;</span></span>
-<span id="cb3-23"><a href="#cb3-23" tabindex="-1"></a>      <span class="co"># don&#39;t show troll temp if there is no water</span></span>
-<span id="cb3-24"><a href="#cb3-24" tabindex="-1"></a>      <span class="fu">mutate</span>(<span class="at">water_temperature =</span> <span class="fu">if_else</span>(depth <span class="sc">&gt;</span> <span class="dv">0</span>, water_temperature, <span class="cn">NA</span>)) <span class="sc">|&gt;</span></span>
-<span id="cb3-25"><a href="#cb3-25" tabindex="-1"></a>      <span class="fu">mutate</span>(<span class="at">site =</span> <span class="fu">factor</span>(site, <span class="at">levels =</span> <span class="fu">unique</span>(sensors<span class="sc">$</span>site))) <span class="sc">|&gt;</span></span>
-<span id="cb3-26"><a href="#cb3-26" tabindex="-1"></a>      <span class="fu">mutate</span>(<span class="at">timestamp =</span> <span class="fu">with_tz</span>(timestamp, <span class="st">&quot;America/Los_Angeles&quot;</span>)) <span class="sc">|&gt;</span></span>
-<span id="cb3-27"><a href="#cb3-27" tabindex="-1"></a>      <span class="do">#############</span></span>
-<span id="cb3-28"><a href="#cb3-28" tabindex="-1"></a>      <span class="co"># LAKE LEVELS</span></span>
-<span id="cb3-29"><a href="#cb3-29" tabindex="-1"></a>      <span class="fu">left_join</span>(ll_data <span class="sc">|&gt;</span> <span class="fu">select</span>(timestamp, <span class="at">lake_level =</span> value), <span class="at">by =</span> <span class="fu">join_by</span>(timestamp)) <span class="sc">|&gt;</span></span>
-<span id="cb3-30"><a href="#cb3-30" tabindex="-1"></a>      <span class="do">##############################</span></span>
-<span id="cb3-31"><a href="#cb3-31" tabindex="-1"></a>      <span class="co"># GAGE WATER SURFACE ELEVATION</span></span>
-<span id="cb3-32"><a href="#cb3-32" tabindex="-1"></a>      <span class="fu">left_join</span>(sites <span class="sc">|&gt;</span> <span class="fu">select</span>(code, twg_elev), <span class="at">by=</span><span class="fu">join_by</span>(code)) <span class="sc">|&gt;</span></span>
-<span id="cb3-33"><a href="#cb3-33" tabindex="-1"></a>      <span class="fu">mutate</span>(<span class="at">wse_ft_navd88 =</span> <span class="fu">if_else</span>(depth <span class="sc">&gt;</span> <span class="dv">0</span>, depth <span class="sc">+</span> twg_elev, <span class="cn">NA</span>)) <span class="sc">|&gt;</span></span>
-<span id="cb3-34"><a href="#cb3-34" tabindex="-1"></a>      <span class="do">#################################</span></span>
-<span id="cb3-35"><a href="#cb3-35" tabindex="-1"></a>      <span class="co"># GROUNDWATER DEPTH AND ELEVATION</span></span>
-<span id="cb3-36"><a href="#cb3-36" tabindex="-1"></a>      <span class="co"># correct piezometer for well depth and calculate piezometer GWE</span></span>
-<span id="cb3-37"><a href="#cb3-37" tabindex="-1"></a>      <span class="fu">inner_join</span>(sensors <span class="sc">|&gt;</span> <span class="fu">filter</span>(type <span class="sc">==</span> <span class="st">&quot;troll&quot;</span>) <span class="sc">|&gt;</span> <span class="fu">select</span>(code, name), <span class="at">by =</span> <span class="fu">join_by</span>(code)) <span class="sc">|&gt;</span></span>
-<span id="cb3-38"><a href="#cb3-38" tabindex="-1"></a>      <span class="fu">left_join</span>(piezo_meta <span class="sc">|&gt;</span> <span class="fu">select</span>(name, gse_ft_navd88, tdx_ft_navd88), <span class="at">by =</span> <span class="fu">join_by</span>(name)) <span class="sc">|&gt;</span></span>
-<span id="cb3-39"><a href="#cb3-39" tabindex="-1"></a>      <span class="co"># remove piezometer depth readings caused by trolls being pulled from</span></span>
-<span id="cb3-40"><a href="#cb3-40" tabindex="-1"></a>      <span class="co"># the well for maintenance (see clean_piezo_depth() in global.R)</span></span>
-<span id="cb3-41"><a href="#cb3-41" tabindex="-1"></a>      <span class="fu">group_by</span>(category, site) <span class="sc">|&gt;</span></span>
-<span id="cb3-42"><a href="#cb3-42" tabindex="-1"></a>      <span class="fu">mutate</span>(<span class="at">depth =</span> <span class="fu">if_else</span>(category <span class="sc">==</span> <span class="st">&quot;Piezometer&quot;</span>,</span>
-<span id="cb3-43"><a href="#cb3-43" tabindex="-1"></a>                             <span class="fu">clean_piezo_depth</span>(timestamp, depth),</span>
-<span id="cb3-44"><a href="#cb3-44" tabindex="-1"></a>                             depth)) <span class="sc">|&gt;</span></span>
-<span id="cb3-45"><a href="#cb3-45" tabindex="-1"></a>      <span class="fu">ungroup</span>() <span class="sc">|&gt;</span></span>
-<span id="cb3-46"><a href="#cb3-46" tabindex="-1"></a>      <span class="co"># calculate groundwater elevation</span></span>
-<span id="cb3-47"><a href="#cb3-47" tabindex="-1"></a>      <span class="fu">mutate</span>(<span class="at">gwe_ft_navd88 =</span> <span class="fu">if_else</span>(category <span class="sc">==</span> <span class="st">&quot;Piezometer&quot;</span>,</span>
-<span id="cb3-48"><a href="#cb3-48" tabindex="-1"></a>                                     tdx_ft_navd88 <span class="sc">+</span> depth,</span>
-<span id="cb3-49"><a href="#cb3-49" tabindex="-1"></a>                                     <span class="cn">NA</span>),</span>
-<span id="cb3-50"><a href="#cb3-50" tabindex="-1"></a>             <span class="at">gw_depth_ft =</span> <span class="fu">if_else</span>(category <span class="sc">==</span> <span class="st">&quot;Piezometer&quot;</span>,</span>
-<span id="cb3-51"><a href="#cb3-51" tabindex="-1"></a>                                   gse_ft_navd88 <span class="sc">-</span> gwe_ft_navd88,</span>
-<span id="cb3-52"><a href="#cb3-52" tabindex="-1"></a>                                   <span class="cn">NA</span>)</span>
-<span id="cb3-53"><a href="#cb3-53" tabindex="-1"></a>             ) <span class="sc">|&gt;</span></span>
-<span id="cb3-54"><a href="#cb3-54" tabindex="-1"></a>      <span class="fu">select</span>(<span class="sc">-</span>name, <span class="sc">-</span>gse_ft_navd88, <span class="sc">-</span>tdx_ft_navd88)</span></code></pre></div>
+<p>Apply data cleaning via <code>build_df_pivot()</code> (defined in
+<code>global.R</code>), shared with <code>app.R</code> so the two can
+never drift out of sync.</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a>df_pivot <span class="ot">&lt;-</span> <span class="fu">build_df_pivot</span>(ts_data, ll_data)</span></code></pre></div>
 <h2 id="id_02-groundwater-study">0.2 Groundwater Study</h2>
 <div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a>plt_gw_elev <span class="ot">&lt;-</span></span>
 <span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a>  df_pivot <span class="sc">|&gt;</span></span>

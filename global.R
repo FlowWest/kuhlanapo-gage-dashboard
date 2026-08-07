@@ -1,4 +1,5 @@
 library(tidyverse)
+library(janitor)
 
 sites <- tribble(
   ~category,    ~code,   ~site,                 ~site_label,                  ~site_descrip,                    ~twg_elev,
@@ -243,5 +244,67 @@ clean_piezo_depth <- function(timestamp, depth, hard_max = 18,
     !ok_via_lag & !ok_via_lead ~ NA_real_,
     TRUE ~ depth
   )
+}
+
+# Build the cleaned, pivoted gage/piezometer time series used by both app.R
+# and data-raw/report_figures.Rmd. Keeping this in one place means the two
+# can never drift out of sync the way the piezometer depth cleaning did.
+# `ts_data`/`ll_data` must already be resolved data frames (call reactives
+# like `ts_data()` before passing them in).
+build_df_pivot <- function(ts_data, ll_data) {
+  ts_data |>
+    inner_join(sites |> select(code, category)) |>
+    filter(parm_name %in% c("Depth", "Temperature")) |>
+    mutate(parm_name_modified = case_when(
+      parm_name == "Temperature" & type == "vulink" ~ "Air Temperature",
+      parm_name == "Temperature" ~ "Water Temperature",
+      TRUE ~ parm_name
+    )) |>
+    # convert units. also, depth readings less than zero are invalid
+    mutate(value = case_when(
+      parm_name == "Depth" ~ if_else(value > 0, value / 0.3048, 0),
+      parm_name == "Temperature" ~ value * 9 / 5 + 32
+    )) |>
+    select(category, code, site, timestamp, parm_name_modified, value) |>
+    pivot_wider(names_from = parm_name_modified, values_from = value) |>
+    clean_names() |>
+    # if troll is freezing, depth reading is invalid
+    group_by(category, code, site) |>
+    mutate(depth = if_else((water_temperature > 32) &
+                             coalesce(lag(water_temperature) > 32, TRUE),
+                           depth, NA)) |>
+    ungroup() |>
+    # don't show troll temp if there is no water
+    mutate(water_temperature = if_else(depth > 0, water_temperature, NA)) |>
+    mutate(site = factor(site, levels = unique(sensors$site))) |>
+    mutate(timestamp = with_tz(timestamp, "America/Los_Angeles")) |>
+    #############
+    # LAKE LEVELS
+    left_join(ll_data |> select(timestamp, lake_level = value), by = join_by(timestamp)) |>
+    ##############################
+    # GAGE WATER SURFACE ELEVATION
+    left_join(sites |> select(code, twg_elev), by = join_by(code)) |>
+    mutate(wse_ft_navd88 = if_else(depth > 0, depth + twg_elev, NA)) |>
+    #################################
+    # GROUNDWATER DEPTH AND ELEVATION
+    # correct piezometer for well depth and calculate piezometer GWE
+    inner_join(sensors |> filter(type == "troll") |> select(code, name), by = join_by(code)) |>
+    left_join(piezo_meta |> select(name, gse_ft_navd88, tdx_ft_navd88), by = join_by(name)) |>
+    # remove piezometer depth readings caused by trolls being pulled from
+    # the well for maintenance
+    group_by(category, site) |>
+    mutate(depth = if_else(category == "Piezometer",
+                           clean_piezo_depth(timestamp, depth),
+                           depth)) |>
+    ungroup() |>
+    # calculate groundwater elevation
+    mutate(gwe_ft_navd88 = if_else(category == "Piezometer",
+                                   tdx_ft_navd88 + depth,
+                                   NA),
+           gw_depth_ft = if_else(category == "Piezometer",
+                                 gse_ft_navd88 - gwe_ft_navd88,
+                                 NA)
+           ) |>
+    select(-name, -gse_ft_navd88, -tdx_ft_navd88)
 }
 
