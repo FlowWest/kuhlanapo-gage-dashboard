@@ -463,13 +463,14 @@ server <- function(input, output, session) {
     dateRangeInput(
       "date_range",
       label = "",
+      # "piezo" used to default to a hardcoded 2025-12-09 - 2026-02-03
+      # window (same staleness bug as the old gw_time slider default) --
+      # falls through to the same rolling window as stage/default now
       start = switch(mode,
                      stage = latest_stage_date - 30,
-                     piezo = as.Date("2025-12-09"),
                      latest_stage_date - 30),
       end = switch(mode,
                    stage = latest_stage_date,
-                   piezo = as.Date("2026-02-03"),
                    latest_stage_date),
       min = as.Date("2025-12-06"),
       max = Sys.Date()
