@@ -1031,7 +1031,7 @@ server <- function(input, output, session) {
   
   # Reactive: IDW interpolation at selected time
   gw_contour_df <- reactive({
-    req(url_mode() == "piezo")
+    req(input$top_metric == "gw_contour")
     req(input$gw_time)
     df <- df_pivot() |> 
       filter(category == "Piezometer") |> 
@@ -1048,7 +1048,7 @@ server <- function(input, output, session) {
   
   # Output: GW Contour ggplot
   output$gw_contour_plot <- renderPlot({
-    req(url_mode() == "piezo")
+    req(input$top_metric == "gw_contour")
     req(gw_contour_df())
     
     gw_contour_df() |>
