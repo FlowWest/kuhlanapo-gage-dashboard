@@ -47,6 +47,47 @@ ZERO_RUMSEY_NAVD88 <- 1320.74
 idw_obj <- readRDS(here::here("data-raw", "idw_precomputed.rds"))
 kuhlanapo_bnd <- readRDS(here::here("data", "kuhlanapo_bnd.rds"))
 
+# Thin a single series to at most `max_points` before it's added as a plotly
+# trace. Wide date ranges (e.g. Jan-present) at native ~15-min cadence across
+# up to 10 piezometer traces produced 100k+ points and a 20+MB JSON payload,
+# which was slow enough on shinyapps.io's hosted tier to disconnect the
+# session -- this buckets by time and averages rather than decimating, so the
+# visible trend/noise band is preserved.
+downsample_for_plot <- function(df, max_points = 3000) {
+  n <- nrow(df)
+  if (n <= max_points || n == 0) return(df)
+
+  df <- df |> arrange(timestamp)
+  ts <- df$timestamp
+  span_secs <- as.numeric(difftime(max(ts), min(ts), units = "secs"))
+  bucket_secs <- max(1, ceiling(span_secs / max_points))
+  bucket <- floor(as.numeric(ts) / bucket_secs)
+  tzone <- attr(ts, "tzone")
+
+  numeric_cols <- names(df)[vapply(df, is.numeric, logical(1))]
+  other_cols   <- setdiff(names(df), c("timestamp", numeric_cols))
+
+  # vectorized per-bucket mean via rowsum() -- dplyr's summarise(across(...))
+  # over ~3000 groups took 3+ sec per series here, which ate the time saved
+  # by shrinking the payload; this does the same math at the C level
+  mat <- cbind(.ts = as.numeric(ts), as.matrix(df[numeric_cols]))
+  na_mask <- is.na(mat)
+  mat0 <- mat; mat0[na_mask] <- 0
+  sums   <- rowsum(mat0, bucket)
+  counts <- rowsum(1 - na_mask * 1, bucket)
+  means  <- sums / counts
+  means[!is.finite(means)] <- NA_real_
+
+  # buckets are monotonically non-decreasing since df is time-ordered, so
+  # the first row per bucket is already in bucket order -- no re-sort needed
+  first_df <- df[!duplicated(bucket), other_cols, drop = FALSE]
+
+  out <- as.data.frame(means)
+  out$timestamp <- as.POSIXct(out$.ts, origin = "1970-01-01", tz = tzone)
+  out$.ts <- NULL
+  cbind(out, first_df)[c("timestamp", numeric_cols, other_cols)]
+}
+
 message(
   sprintf(
     "[cache:init] dir=%s | ttl=%s sec (%.1f hrs) | forced_refresh=07:30 PT",
@@ -759,7 +800,7 @@ server <- function(input, output, session) {
 
       # ---- Surface water depth/WSE traces ----
       for (s in sites_stage$code) {
-        df_s <- base_df |> filter(code == s)
+        df_s <- base_df |> filter(code == s) |> downsample_for_plot()
         
         p <- add_trace(
           p,
@@ -783,7 +824,7 @@ server <- function(input, output, session) {
       
       # ---- Temperature traces ----
       for (s in sites_stage$code) {
-        df_s <- base_df |> filter(code == s)
+        df_s <- base_df |> filter(code == s) |> downsample_for_plot()
         
         # Water temperature (solid)
         p <- add_trace(
@@ -831,7 +872,7 @@ server <- function(input, output, session) {
                       "gwe_ft_navd88" = max(base_df[[ycol]], na.rm=T))
 
       for (s in sites_piezo_filtered()$code) {
-        df_s <- base_df |> filter(code == s)
+        df_s <- base_df |> filter(code == s) |> downsample_for_plot()
         has_data <- nrow(df_s) > 0 && any(!is.na(df_s[[ycol]]))
         
         p <- add_trace(
