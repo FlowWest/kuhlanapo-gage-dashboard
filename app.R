@@ -346,18 +346,7 @@ ui <- fluidPage(
 
         conditionalPanel(
           condition = "input.top_metric == 'gw_contour'",
-          sliderInput(
-            "gw_time",
-            "",
-            min = as.POSIXct("2025-12-09 00:00", tz = "America/Los_Angeles"),
-            max = as.POSIXct("2026-02-03 23:59", tz = "America/Los_Angeles"),
-            value = as.POSIXct("2026-01-01 00:00", tz = "America/Los_Angeles"),
-            timeFormat = "%Y-%m-%d %H:%M",
-            step = 900, # 1 hour steps
-            animate = FALSE,
-            ticks = FALSE,
-            width = "300px"
-          )
+          uiOutput("gw_time_selector")
         )
       )
     ),
@@ -558,17 +547,40 @@ server <- function(input, output, session) {
     )
   })
   
-  # Slider for GW Contour time
-  gw_contour_time <- reactive({
-    if(input$top_metric != "gw_contour") return(NULL)
-    
-    df <- filtered_df()
-    req(nrow(df) > 0)
-    
-    slider_min <- min(df$timestamp, na.rm = TRUE)
-    slider_max <- max(df$timestamp, na.rm = TRUE)
-    
-    input$gw_contour_t0 %||% slider_min
+  # Slider for GW Contour time -- bounded by the actual available piezometer
+  # record (not the toolbar's date_range, since gw_contour_df() queries
+  # df_pivot() directly rather than filtered_df()), so it stays correct as
+  # new data comes in instead of the range being hardcoded and going stale.
+  output$gw_time_selector <- renderUI({
+    req(input$top_metric == "gw_contour")
+
+    piezo_df <- df_pivot() |> filter(category == "Piezometer")
+    piezo_range <- range(piezo_df$timestamp, na.rm = TRUE)
+    req(all(is.finite(piezo_range)))
+
+    # default to the latest time where every piezometer still has a
+    # reasonably recent reading, rather than the overall latest timestamp --
+    # individual trolls fall behind (maintenance, dead battery, etc.), and
+    # picking a time only a few of them have data for interpolates from an
+    # unrepresentative handful of sites (or nothing at all)
+    default_t0 <- piezo_df |>
+      filter(!is.na(gwe_ft_navd88)) |>
+      summarise(latest = max(timestamp), .by = code) |>
+      pull(latest) |>
+      min()
+
+    sliderInput(
+      "gw_time",
+      "",
+      min = piezo_range[1],
+      max = piezo_range[2],
+      value = isolate(input$gw_time) %||% default_t0,
+      timeFormat = "%Y-%m-%d %H:%M",
+      step = 900, # 15 min steps
+      animate = FALSE,
+      ticks = FALSE,
+      width = "300px"
+    )
   })
   
   ts_data <- reactive({
@@ -1050,7 +1062,11 @@ server <- function(input, output, session) {
   output$gw_contour_plot <- renderPlot({
     req(input$top_metric == "gw_contour")
     req(gw_contour_df())
-    
+    validate(need(
+      any(!is.na(gw_contour_df()$value)),
+      "No piezometer readings close enough to this time to interpolate a map. Try a different time."
+    ))
+
     gw_contour_df() |>
     ggplot(aes(x = x, y = y)) +
       geom_polygon(data = kuhlanapo_bnd, aes(x = X, y = Y), fill = "#eeeeee") +
