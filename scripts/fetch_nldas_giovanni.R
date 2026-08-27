@@ -17,7 +17,14 @@ MIN_START_DATE <- as.POSIXct("2025-12-01 00:00:00", tz = "UTC")
 OVERLAP_HOURS  <- 48   # safety overlap when resuming from existing data
 INGEST_LAG     <- days(6)  # NLDAS near-real-time files run ~5 days behind Sys.time()
 
-BASE_URL <- "https://hydro1.gesdisc.eosdis.nasa.gov/opendap/NLDAS/NLDAS_FORA0125_H.2.0"
+# GES DISC retired their on-premises OPeNDAP service (hydro1.gesdisc.eosdis.nasa.gov)
+# in July 2026 - it now 410s. Replaced with the Hyrax-based Earthdata Cloud OPeNDAP
+# service, addressed by CMR collection concept-id rather than a filesystem-style path.
+# Granule ids are still deterministic from the timestamp (no CMR lookup needed):
+# "NLDAS_FORA0125_H.2.0:NLDAS_FORA0125_H.A<yyyymmdd>.<hhmm>.020.nc" (concept-id
+# verified against CMR granule search for this collection/short_name/version).
+COLLECTION_ID <- "C2033151148-GES_DISC"
+BASE_URL <- "https://opendap.earthdata.nasa.gov/collections"
 
 # NLDAS_FORA0125 native grid (see batch_download_nldas.R in interoperable-flows)
 GRID_LONS <- seq(-124.9375, -67.0625, 0.125)
@@ -80,13 +87,12 @@ nearest_idx <- function(lon, lat) {
 }
 
 build_nldas_url <- function(dt, x_idx, y_idx) {
-  yyyy     <- format(dt, "%Y")
-  doy      <- sprintf("%03d", as.integer(format(dt, "%j")))
   yyyymmdd <- format(dt, "%Y%m%d")
   hhhh     <- sprintf("%02d00", as.integer(format(dt, "%H")))
+  granule_id <- sprintf("NLDAS_FORA0125_H.2.0:NLDAS_FORA0125_H.A%s.%s.020.nc", yyyymmdd, hhhh)
   sprintf(
-    "%s/%s/%s/NLDAS_FORA0125_H.A%s.%s.020.nc.ascii?Rainf[0:1:0][%d][%d]",
-    BASE_URL, yyyy, doy, yyyymmdd, hhhh, y_idx, x_idx
+    "%s/%s/granules/%s.ascii?Rainf%%5B0:1:0%%5D%%5B%d%%5D%%5B%d%%5D",
+    BASE_URL, COLLECTION_ID, utils::URLencode(granule_id, reserved = TRUE), y_idx, x_idx
   )
 }
 
