@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: data-pull-lock
+  group: nldas-pull-lock
   cancel-in-progress: false
   
 jobs:

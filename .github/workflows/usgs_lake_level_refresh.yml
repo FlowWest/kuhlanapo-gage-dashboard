@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: data-pull-lock
+  group: usgs-pull-lock
   cancel-in-progress: false
   
 jobs:
