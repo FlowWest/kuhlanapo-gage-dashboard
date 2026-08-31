@@ -57,9 +57,8 @@ proxy-timeseries endpoint (long dead; never worked reliably) or the retired
 host.
 
 Data are cached locally as an Rds so the historical pull only needs to run
-once; set `PULL_FRESH_DATA <- TRUE` below to top up with more recent data
-(the fetch window logic only pulls what's missing since the last cached
-timestamp).
+once; set `PULL_FRESH_DATA <- TRUE` below to force a full re-pull (e.g. after
+changing the date range or cadence below).
 
 ```{r wind_pull_setup}
 rds_path <- here::here("data-raw", "wind_ts_lakeshore.rds")
@@ -67,17 +66,15 @@ rds_path <- here::here("data-raw", "wind_ts_lakeshore.rds")
 PULL_FRESH_DATA <- FALSE
 
 # Historical period + sampling cadence used to build the climatological wind
-# rose. NLDAS_FORA0125_H extends back to 1979 and is available hourly, but a
-# full hourly pull over many years is slow (~0.3 s/request against this
-# service). Sampling every 3 hours over 3 years costs about the same wall
-# time (~50 min) as 1 year hourly, while covering 3x the seasons - a better
-# tradeoff for a directional climatology, which doesn't need full diurnal
-# resolution. Set SAMPLE_CADENCE_HOURS <- 1 for full hourly resolution if
-# needed for other purposes.
-HIST_START_TIME     <- floor_date(with_tz(Sys.time(), "UTC"), "hour") - years(3)
+# rose. Fixed to Water Years 2007-2025 (Oct 1 2006 - Sep 30 2025, local time)
+# to match the span of the lake gage record. NLDAS_FORA0125_H is hourly, but
+# a full hourly pull over 19 years is very slow (~0.3 s/request against this
+# service - hourly would be ~14 hrs). Sampling every 3 hours (8x/day) covers
+# the full seasonal and diurnal cycle at roughly a third of that cost
+# (~4.5 hrs).
+HIST_START_TIME <- with_tz(ymd_hms("2006-10-01 00:00:00", tz = "America/Los_Angeles"), "UTC")
+HIST_END_TIME   <- with_tz(ymd_hms("2025-09-30 23:00:00", tz = "America/Los_Angeles"), "UTC")
 SAMPLE_CADENCE_HOURS <- 3
-OVERLAP_HOURS        <- 48   # safety overlap when topping up from cached data
-INGEST_LAG           <- days(6)  # NLDAS near-real-time files run ~5-6 days behind Sys.time()
 
 # NLDAS_FORA0125_H.2.0 collection concept-id (verified via CMR granule search)
 COLLECTION_ID <- "C2033151148-GES_DISC"
@@ -147,10 +144,7 @@ parse_opendap_ascii <- function(txt, vars) {
 # cookie, rather than repeating the full URS login/redirect on every request -
 # subsequent requests just present this cookie directly.
 establish_session <- function() {
-  probe_url <- build_nldas_url(
-    floor_date(with_tz(Sys.time(), "UTC"), "hour") - INGEST_LAG - hours(1),
-    0, 0, "Rainf"
-  )
+  probe_url <- build_nldas_url(HIST_START_TIME, 0, 0, "Rainf")
   res <- GET(
     probe_url,
     config(netrc = TRUE, netrc_file = NETRC_PATH, followlocation = TRUE,
@@ -188,57 +182,31 @@ safe_fetch_one_hour <- possibly(fetch_one_hour, otherwise = NULL, quiet = TRUE)
 ```{r wind_pull_run}
 if (PULL_FRESH_DATA || !file.exists(rds_path)) {
 
-  existing <- if (file.exists(rds_path)) readRDS(rds_path) else NULL
+  idx <- nearest_idx(wind_site$lon, wind_site$lat)
+  hours_seq <- seq(HIST_START_TIME, HIST_END_TIME, by = paste(SAMPLE_CADENCE_HOURS, "hours"))
+  message("Fetching ", length(hours_seq), " timestamps at ", SAMPLE_CADENCE_HOURS,
+          "-hour cadence from ", HIST_START_TIME, " to ", HIST_END_TIME)
 
-  start_ts <- if (!is.null(existing) && nrow(existing) > 0) {
-    max(existing$timestamp_utc, na.rm = TRUE) - hours(OVERLAP_HOURS)
-  } else {
-    HIST_START_TIME
-  }
-  start_ts <- max(start_ts, HIST_START_TIME)
-  end_ts <- floor_date(with_tz(Sys.time(), "UTC"), "hour") - INGEST_LAG
+  establish_session()
+  plan(multisession, workers = min(MAX_WORKERS, future::availableCores()))
 
-  if (start_ts >= end_ts) {
+  results <- future_map(
+    hours_seq,
+    ~ safe_fetch_one_hour(.x, idx$x, idx$y, c("Wind_E", "Wind_N")),
+    .options = furrr_options(seed = TRUE)
+  )
 
-    message("Nothing new to fetch")
-    wind_ts <- existing
+  plan(sequential)
 
-  } else {
+  wind_ts <- tibble(site = wind_site$id, timestamp_utc = hours_seq) |>
+    bind_cols(bind_rows(results)) |>
+    rename(wind_e_ms = Wind_E, wind_n_ms = Wind_N) |>
+    filter(!is.na(wind_e_ms), !is.na(wind_n_ms)) |>
+    mutate(timestamp = with_tz(timestamp_utc, "America/Los_Angeles")) |>
+    arrange(site, timestamp_utc)
 
-    idx <- nearest_idx(wind_site$lon, wind_site$lat)
-    hours_seq <- seq(start_ts, end_ts, by = paste(SAMPLE_CADENCE_HOURS, "hours"))
-    message("Fetching ", length(hours_seq), " timestamps at ", SAMPLE_CADENCE_HOURS,
-            "-hour cadence from ", start_ts, " to ", end_ts)
-
-    establish_session()
-    plan(multisession, workers = min(MAX_WORKERS, future::availableCores()))
-
-    results <- future_map(
-      hours_seq,
-      ~ safe_fetch_one_hour(.x, idx$x, idx$y, c("Wind_E", "Wind_N")),
-      .options = furrr_options(seed = TRUE)
-    )
-
-    plan(sequential)
-
-    new_data <- tibble(site = wind_site$id, timestamp_utc = hours_seq) |>
-      bind_cols(bind_rows(results)) |>
-      rename(wind_e_ms = Wind_E, wind_n_ms = Wind_N) |>
-      filter(!is.na(wind_e_ms), !is.na(wind_n_ms)) |>
-      mutate(timestamp = with_tz(timestamp_utc, "America/Los_Angeles"))
-
-    wind_ts <- if (!is.null(existing)) {
-      bind_rows(existing, new_data) |>
-        distinct(site, timestamp_utc, .keep_all = TRUE) |>
-        arrange(site, timestamp_utc)
-    } else {
-      new_data |> arrange(site, timestamp_utc)
-    }
-
-    wind_ts |> saveRDS(rds_path)
-    message("Saved ", nrow(wind_ts), " total wind records")
-
-  }
+  wind_ts |> saveRDS(rds_path)
+  message("Saved ", nrow(wind_ts), " total wind records")
 
 } else {
 
@@ -249,32 +217,50 @@ if (PULL_FRESH_DATA || !file.exists(rds_path)) {
 
 ## Compute Wind Direction
 
-Convert the eastward/northward wind vector components to wind speed and
-meteorological wind direction (degrees clockwise from north, direction the
-wind is blowing *from*).
+Convert the eastward/northward wind vector components (m/s) to wind speed
+(converted to mph) and meteorological wind direction (degrees clockwise from
+north, direction the wind is blowing *from*).
 
 ```{r wind_direction}
+MS_TO_MPH <- 2.236936
+
 wind_ts <- wind_ts |>
   mutate(
-    wind_speed_ms = sqrt(wind_e_ms^2 + wind_n_ms^2),
+    wind_speed_mph = sqrt(wind_e_ms^2 + wind_n_ms^2) * MS_TO_MPH,
     wind_dir_deg = (atan2(wind_e_ms, wind_n_ms) * 180 / pi + 180) %% 360
   )
 
+# Custom meteorological-season labels (Mar-May / Jun-Aug / Sep-Nov / Dec-Feb)
+# in place of openair's default "spring (MAM)" etc. Named "period" rather
+# than "season" since openair reserves that column name for its own
+# built-in MAM/JJA/SON/DJF cutData logic.
 wind_df <- wind_ts |>
-  transmute(date = timestamp, ws = wind_speed_ms, wd = wind_dir_deg) |>
+  mutate(
+    period = case_when(
+      month(timestamp) %in% 3:5  ~ "Mar-May",
+      month(timestamp) %in% 6:8  ~ "Jun-Aug",
+      month(timestamp) %in% 9:11 ~ "Sep-Nov",
+      TRUE                       ~ "Dec-Feb"
+    ),
+    period = factor(period, levels = c("Mar-May", "Jun-Aug", "Sep-Nov", "Dec-Feb"))
+  ) |>
+  transmute(date = timestamp, ws = wind_speed_mph, wd = wind_dir_deg, period) |>
   filter(!is.na(ws), !is.na(wd))
 ```
 
 ## Wind Rose
 
-Overall wind rose across the full historical record.
+Overall wind rose across the full Water Year 2007-2025 record.
 
-```{r windrose_overall, fig.width=7, fig.height=6, dpi=300}
+```{r windrose_overall, fig.width=6.5, fig.height=4, dpi=300}
 windRose(
   wind_df,
   ws = "ws",
   wd = "wd",
   paddle = FALSE,
+  annotate = FALSE,
+  breaks = c(0, 10, 20, 40),
+  key.footer = "(mph)",
   main = "Lakeshore Wind Rose - Overall"
 )
 ```
@@ -282,13 +268,49 @@ windRose(
 Seasonal wind roses, to check whether inlet orientation should account for
 seasonal shifts in the dominant wave-generating wind direction.
 
-```{r windrose_seasonal, fig.width=8, fig.height=8, dpi=300}
+```{r windrose_seasonal, fig.width=6.5, fig.height=6.5, dpi=300}
 windRose(
   wind_df,
   ws = "ws",
   wd = "wd",
-  type = "season",
+  type = "period",
   paddle = FALSE,
+  annotate = FALSE,
+  breaks = c(0, 10, 20, 40),
+  key.footer = "(mph)",
   main = "Lakeshore Wind Rose - Seasonal"
 )
+```
+
+## Export Figures
+
+Standalone PNG exports at fixed dimensions for use in reports.
+
+```{r export_pngs}
+png(here::here("data-raw", "windrose_overall.png"), width = 6.5, height = 4, units = "in", res = 300)
+windRose(
+  wind_df,
+  ws = "ws",
+  wd = "wd",
+  paddle = FALSE,
+  annotate = FALSE,
+  breaks = c(0, 10, 20, 40),
+  key.footer = "(mph)",
+  main = "Lakeshore Wind Rose - Overall"
+)
+dev.off()
+
+png(here::here("data-raw", "windrose_seasonal.png"), width = 6.5, height = 6.5, units = "in", res = 300)
+windRose(
+  wind_df,
+  ws = "ws",
+  wd = "wd",
+  type = "period",
+  paddle = FALSE,
+  annotate = FALSE,
+  breaks = c(0, 10, 20, 40),
+  key.footer = "(mph)",
+  main = "Lakeshore Wind Rose - Seasonal"
+)
+dev.off()
 ```
