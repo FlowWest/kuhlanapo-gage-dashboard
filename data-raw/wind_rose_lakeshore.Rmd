@@ -1,5 +1,5 @@
 ---
-title: "Lakeshore Wind Rose"
+title: "Kuhlanapo Wetland Preserve Wind Rose"
 author: "Skyler Lewis"
 date: "`r Sys.Date()`"
 output:
@@ -260,8 +260,9 @@ windRose(
   paddle = FALSE,
   annotate = FALSE,
   breaks = c(0, 10, 20, 40),
+  cols = c("#5E4FA2", "#FDC06C", "#9E0142"),
   key.footer = "(mph)",
-  main = "Lakeshore Wind Rose - Overall"
+  main = "Kuhlanapo Wetland Preserve Wind Rose"
 )
 ```
 
@@ -277,8 +278,9 @@ windRose(
   paddle = FALSE,
   annotate = FALSE,
   breaks = c(0, 10, 20, 40),
+  cols = c("#5E4FA2", "#FDC06C", "#9E0142"),
   key.footer = "(mph)",
-  main = "Lakeshore Wind Rose - Seasonal"
+  main = "Kuhlanapo Wetland Preserve Wind Rose - Seasonal"
 )
 ```
 
@@ -295,8 +297,9 @@ windRose(
   paddle = FALSE,
   annotate = FALSE,
   breaks = c(0, 10, 20, 40),
+  cols = c("#5E4FA2", "#FDC06C", "#9E0142"),
   key.footer = "(mph)",
-  main = "Lakeshore Wind Rose - Overall"
+  main = "Kuhlanapo Wetland Preserve Wind Rose"
 )
 dev.off()
 
@@ -309,8 +312,9 @@ windRose(
   paddle = FALSE,
   annotate = FALSE,
   breaks = c(0, 10, 20, 40),
+  cols = c("#5E4FA2", "#FDC06C", "#9E0142"),
   key.footer = "(mph)",
-  main = "Lakeshore Wind Rose - Seasonal"
+  main = "Kuhlanapo Wetland Preserve Wind Rose - Seasonal"
 )
 dev.off()
 ```
