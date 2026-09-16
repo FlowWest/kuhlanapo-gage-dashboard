@@ -1081,7 +1081,9 @@ server <- function(input, output, session) {
                                size = 12 / .pt,
                                na.rm = TRUE)  +
       geom_point(data=idw_obj$sites, aes(fill = id), size = 12, shape = 21) +
-      geom_text(data=idw_obj$sites, aes(label = substr(id, 4, 5)), size = 12 / .pt) +
+      geom_text(data=idw_obj$sites |>
+                  mutate(label_color = if_else(id %in% c("PZ-A1", "PZ-B1", "PZ-B2"), "white", "black")),
+                aes(label = substr(id, 4, 5), color = I(label_color)), size = 12 / .pt) +
       coord_equal(xlim = c(min(gw_contour_df()$x), max(gw_contour_df()$x)),
                   ylim = c(min(gw_contour_df()$y), max(gw_contour_df()$y))) +
       scale_y_continuous(expand = expansion(add = c(400, 1200))) +

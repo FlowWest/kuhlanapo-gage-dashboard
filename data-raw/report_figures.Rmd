@@ -234,3 +234,89 @@ print(plt_sw_precip)
   plot_layout(heights = c(1, 2, 2), guides = "collect", axes = "collect_x")
 ```
 
+## Groundwater Contour Export
+
+Export the IDW-interpolated groundwater elevation surface for a single
+timestamp as a GeoTIFF raster and a shapefile of contour lines. This reuses
+`interpolate_idw_at_time()` and the precomputed `idw_precomputed.rds` grid
+from `global.R` / `data-raw/prep_idw_grid.R` -- the same objects the "Piezo
+Map" tab in `app.R` uses -- so the exported surface matches what the app
+shows.
+
+```{r gw_contour_export, message=FALSE}
+library(terra)
+library(sf)
+
+idw_obj <- readRDS(here::here("data-raw", "idw_precomputed.rds"))
+kuhlanapo_bnd <- readRDS(here::here("data", "kuhlanapo_bnd.rds"))
+
+export_date <- as.Date("2026-01-01")
+t0 <- as.POSIXct(paste(export_date, "00:00:00"), tz = "America/Los_Angeles")
+
+gw_ts <- df_pivot |>
+  filter(category == "Piezometer") |>
+  transmute(code, timestamp, value = gwe_ft_navd88)
+
+z_mat <- interpolate_idw_at_time(idw_obj, gw_ts, t0 = t0, return_matrix = TRUE)
+
+stopifnot(
+  "No piezometer readings close enough to this time to interpolate a map." =
+    any(!is.na(z_mat))
+)
+
+# idw_obj$grid is expand.grid(x = gx, y = gy) (x fastest), and z_mat is filled
+# from it byrow = FALSE, so z_mat[i, j] is the value at x = gx[i], y = gy[j].
+# Reorient into raster row/col order: row 1 = max y (north), cols = increasing x.
+gx <- idw_obj$x
+gy <- idw_obj$y
+dx <- diff(gx)[1]
+dy <- diff(gy)[1]
+
+r_mat <- t(z_mat)
+r_mat <- r_mat[rev(seq_len(nrow(r_mat))), , drop = FALSE]
+
+gw_raster <- rast(
+  r_mat,
+  extent = ext(min(gx) - dx / 2, max(gx) + dx / 2,
+               min(gy) - dy / 2, max(gy) + dy / 2),
+  # same CRS the piezometer coordinates were transformed to in prep_idw_grid.R
+  crs = "EPSG:6418"
+)
+
+raster_path <- here::here("data-raw", paste0("gw_elevation_", export_date, ".tif"))
+writeRaster(gw_raster, raster_path, overwrite = TRUE)
+
+# contour lines at 1 ft intervals, matching the app's geom_contour(binwidth = 1)
+z_range <- range(values(gw_raster, na.rm = TRUE))
+contour_levels <- seq(floor(z_range[1]), ceiling(z_range[2]), by = 1)
+
+gw_contours <- as.contour(gw_raster, levels = contour_levels) |>
+  st_as_sf() |>
+  rename(elev_ft_navd88 = level)
+
+contour_path <- here::here("data-raw", paste0("gw_contour_lines_", export_date, ".shp"))
+st_write(gw_contours, contour_path, delete_dsn = TRUE, quiet = TRUE)
+
+cat("Raster written to:  ", raster_path, "\n")
+cat("Contours written to:", contour_path, "\n")
+```
+
+```{r gw_contour_export_preview, fig.width=6.5, fig.height=6.5, dpi=300}
+gw_raster_df <- as.data.frame(gw_raster, xy = TRUE) |> rename(value = 3)
+
+ggplot() +
+  geom_polygon(data = kuhlanapo_bnd, aes(x = X, y = Y), fill = "#eeeeee") +
+  metR::geom_contour_fill(data = gw_raster_df, aes(x = x, y = y, z = value),
+                          na.fill = TRUE, alpha = 0.6) +
+  geom_sf(data = gw_contours, aes(color = elev_ft_navd88), linewidth = 0.8) +
+  geom_point(data = idw_obj$sites, aes(x = x, y = y, fill = id), size = 10, shape = 21) +
+  geom_text(data = idw_obj$sites, aes(x = x, y = y, label = substr(id, 4, 5)), size = 10 / .pt) +
+  coord_sf(xlim = range(gx), ylim = range(gy)) +
+  scale_fill_manual(name = "", values = piezo_colors, guide = "none") +
+  scale_color_viridis_c(name = "ft NAVD88") +
+  labs(title = paste("Groundwater Elevation --", export_date)) +
+  theme_minimal() +
+  theme(panel.grid = element_blank(),
+        axis.title = element_blank())
+```
+
