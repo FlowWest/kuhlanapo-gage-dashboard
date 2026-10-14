@@ -44,6 +44,12 @@ source(here::here("global.R"))
 # As published on USGS lake level gage 11450000
 navd88_to_rumsey_usgs <- function(x) x - 1320.74
 rumsey_to_navd88_usgs <- function(x) x + 1320.74
+
+# Cutoff for all time series plots below -- most recent piezometer data has
+# cleanup still pending, so this report holds at a known-clean date. Filters
+# below use `< report_end_date`, so this is set one day past the last date
+# to include (2026-07-15) to keep that whole day's data.
+report_end_date <- ymd("2026-07-16")
 ```
 
 ## Import Data
@@ -70,9 +76,9 @@ plt_gw_elev <-
   df_pivot |>
   filter(category == "Piezometer") |>
   filter(timestamp >= ymd("2025-12-05")) |>
-  filter(timestamp < Sys.Date()) |>
+  filter(timestamp < report_end_date) |>
   ggplot(aes(x = timestamp, y = gwe_ft_navd88)) +
-  geom_line(data = ll_data |> filter(timestamp < Sys.Date()),
+  geom_line(data = ll_data |> filter(timestamp < report_end_date),
             aes(y = value, linetype = "Lake Level")) +
   geom_line(aes(color = code)) +
   geom_hline(aes(yintercept = rumsey_to_navd88_usgs(7.56),
@@ -101,7 +107,7 @@ plt_gw_depth <-
   df_pivot |>
   filter(category == "Piezometer") |>
   filter(timestamp >= ymd("2025-12-05")) |>
-  filter(timestamp < Sys.Date()) |>
+  filter(timestamp < report_end_date) |>
   ggplot(aes(x = timestamp, y = gw_depth_ft)) +
   geom_line(aes(color = code)) +
   geom_hline(aes(yintercept = 0,
@@ -126,7 +132,7 @@ plt_gw_precip <-
   precip_data |>
   filter(site == "KPD") |>
   filter(timestamp >= ymd("2025-12-05")) |>
-  filter(timestamp < Sys.Date()) |>
+  filter(timestamp < report_end_date) |>
   ggplot() +
   geom_hline(yintercept = 0) +
   geom_rect(aes(xmin = timestamp,
@@ -157,7 +163,7 @@ plt_sw_depth <-
   df_pivot |>
   filter(category == "Stage Gage") |>
   filter(timestamp >= ymd("2025-12-05")) |>
-  filter(timestamp < Sys.Date()) |>
+  filter(timestamp < report_end_date) |>
   ggplot(aes(x = timestamp, y = depth)) +
   geom_line(aes(color = code)) +
   scale_x_datetime(name = "",
@@ -179,9 +185,9 @@ plt_sw_elev <-
   df_pivot |>
   filter(category == "Stage Gage") |>
   filter(timestamp >= ymd("2025-12-05")) |>
-  filter(timestamp < Sys.Date()) |>
+  filter(timestamp < report_end_date) |>
   ggplot(aes(x = timestamp, y = wse_ft_navd88)) +
-  geom_line(data = ll_data |> filter(timestamp < Sys.Date()),
+  geom_line(data = ll_data |> filter(timestamp < report_end_date),
             aes(y = value, linetype = "Lake Level")) +
   geom_line(aes(color = code)) +
   geom_hline(aes(yintercept = rumsey_to_navd88_usgs(7.56),
@@ -210,7 +216,7 @@ plt_sw_precip <-
   precip_data |>
   filter(site == "UMC") |>
   filter(timestamp >= ymd("2025-12-05")) |>
-  filter(timestamp < Sys.Date()) |>
+  filter(timestamp < report_end_date) |>
   ggplot() +
   geom_hline(yintercept = 0) +
   geom_rect(aes(xmin = timestamp,
