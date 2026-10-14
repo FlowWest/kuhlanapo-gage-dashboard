@@ -223,6 +223,15 @@ interpolate_idw_at_time <- function(
 # round-trip dip/spike or a step change with one bad transition reading.
 # A neighbor only counts if it's within `max_gap_min`, so genuine drift
 # across a real data gap (sensor offline, not just misreading) isn't flagged.
+#
+# A neighbor is only trusted as a reference if it's itself corroborated by
+# the reading one step further out (e.g. lag_d vs lag(depth, 2)) -- without
+# this, two consecutive bad readings that happen to agree with each other
+# (common right after a troll is redeployed: a reading or two of transition
+# noise before the signal stabilizes) pass the single-neighbor check and
+# neither gets flagged. If that corroborating point is unavailable, the
+# neighbor is NOT trusted (errs toward nulling at a gap boundary rather
+# than letting an unconfirmed transition reading through).
 # `timestamp`/`depth` must be ordered by time within one piezometer's series.
 clean_piezo_depth <- function(timestamp, depth, hard_max = 18,
                                jump_thresh = 1, max_gap_min = 60) {
@@ -231,11 +240,19 @@ clean_piezo_depth <- function(timestamp, depth, hard_max = 18,
   lag_d   <- lag(depth)
   lead_d  <- lead(depth)
 
+  dt_lag2  <- as.numeric(difftime(timestamp, lag(timestamp, 2),  units = "mins"))
+  dt_lead2 <- as.numeric(difftime(lead(timestamp, 2), timestamp, units = "mins"))
+  lag_d2   <- lag(depth, 2)
+  lead_d2  <- lead(depth, 2)
+
   close_lag  <- !is.na(dt_lag)  & dt_lag  <= max_gap_min
   close_lead <- !is.na(dt_lead) & dt_lead <= max_gap_min
 
-  ok_via_lag  <- close_lag  & !is.na(lag_d)  & lag_d  <= hard_max & abs(depth - lag_d)  <= jump_thresh
-  ok_via_lead <- close_lead & !is.na(lead_d) & lead_d <= hard_max & abs(depth - lead_d) <= jump_thresh
+  lag_corroborated  <- !is.na(dt_lag2)  & dt_lag2  <= max_gap_min & !is.na(lag_d2)  & abs(lag_d  - lag_d2)  <= jump_thresh
+  lead_corroborated <- !is.na(dt_lead2) & dt_lead2 <= max_gap_min & !is.na(lead_d2) & abs(lead_d - lead_d2) <= jump_thresh
+
+  ok_via_lag  <- close_lag  & !is.na(lag_d)  & lag_d  <= hard_max & abs(depth - lag_d)  <= jump_thresh & lag_corroborated
+  ok_via_lead <- close_lead & !is.na(lead_d) & lead_d <= hard_max & abs(depth - lead_d) <= jump_thresh & lead_corroborated
   no_close_neighbor <- !close_lag & !close_lead
 
   case_when(
