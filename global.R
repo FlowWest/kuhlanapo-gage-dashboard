@@ -252,9 +252,25 @@ clean_piezo_depth <- function(timestamp, depth, hard_max = 18,
 # `ts_data`/`ll_data` must already be resolved data frames (call reactives
 # like `ts_data()` before passing them in).
 build_df_pivot <- function(ts_data, ll_data) {
+
+  # 2025BAROK01 (the BaroTroll) is the shared, gap-free atmospheric Baro
+  # reference for all piezometers (not the SGMC stage gages). Pulled out as
+  # its own lookup -- rather than left in the main per-device pivot below --
+  # since it shares a `code`/`site` with PZ-B4's primary troll and would
+  # otherwise collide with that device's own readings at pivot_wider().
+  # It logs on its own :05/:20/:35/:50 schedule rather than the piezometers'
+  # :00/:15/:30/:45 one, so its timestamps are rounded onto their grid before
+  # the join below -- an exact-timestamp join against the raw schedule would
+  # almost never match.
+  barotroll_baro <- ts_data |>
+    filter(name == "2025BAROK01", parm_name == "Baro") |>
+    mutate(timestamp = lubridate::round_date(timestamp, "15 minutes")) |>
+    summarise(baro_fallback = mean(value), .by = timestamp)
+
   ts_data |>
+    filter(name != "2025BAROK01") |>
     inner_join(sites |> select(code, category)) |>
-    filter(parm_name %in% c("Depth", "Temperature")) |>
+    filter(parm_name %in% c("Depth", "Temperature", "Baro")) |>
     mutate(parm_name_modified = case_when(
       parm_name == "Temperature" & type == "vulink" ~ "Air Temperature",
       parm_name == "Temperature" ~ "Water Temperature",
@@ -263,11 +279,19 @@ build_df_pivot <- function(ts_data, ll_data) {
     # convert units. also, depth readings less than zero are invalid
     mutate(value = case_when(
       parm_name == "Depth" ~ if_else(value > 0, value / 0.3048, 0),
-      parm_name == "Temperature" ~ value * 9 / 5 + 32
+      parm_name == "Temperature" ~ value * 9 / 5 + 32,
+      parm_name == "Baro" ~ value
     )) |>
     select(category, code, site, timestamp, parm_name_modified, value) |>
     pivot_wider(names_from = parm_name_modified, values_from = value) |>
     clean_names() |>
+    # fill gaps in a piezometer's own Baro reading from the BaroTroll, the
+    # source of truth for all piezometers -- so a gap in one device's own
+    # Baro channel (e.g. PZ-C3's 2026-02-05 to 2026-03-15 gap) doesn't read
+    # as missing data for that date. Stage gages keep their own Baro as-is.
+    left_join(barotroll_baro, by = "timestamp") |>
+    mutate(baro = if_else(category == "Piezometer", coalesce(baro, baro_fallback), baro)) |>
+    select(-baro_fallback) |>
     # if troll is freezing, depth reading is invalid
     group_by(category, code, site) |>
     mutate(depth = if_else((water_temperature > 32) &
