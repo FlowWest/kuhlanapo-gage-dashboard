@@ -15,7 +15,9 @@ precip_sites <- tibble::tribble(
 
 MIN_START_DATE <- as.POSIXct("2025-12-01 00:00:00", tz = "UTC")
 OVERLAP_HOURS  <- 48   # safety overlap when resuming from existing data
-INGEST_LAG     <- days(6)  # NLDAS near-real-time files run ~5 days behind Sys.time()
+# NLDAS ingest lag varies (usually ~5 days, sometimes 7+), so the fetch window
+# ends at the latest granule CMR actually lists rather than a fixed offset from
+# Sys.time() - requesting a not-yet-published granule 404s.
 
 # GES DISC retired their on-premises OPeNDAP service (hydro1.gesdisc.eosdis.nasa.gov)
 # in July 2026 - it now 410s. Replaced with the Hyrax-based Earthdata Cloud OPeNDAP
@@ -60,11 +62,8 @@ if (nzchar(earthdata_user) && nzchar(earthdata_password)) {
 # Do the netrc+redirect handshake once up front and keep the resulting session
 # cookie, rather than repeating the full URS login/redirect on every request -
 # subsequent requests just present this cookie directly.
-establish_session <- function() {
-  probe_url <- build_nldas_url(
-    floor_date(with_tz(Sys.time(), "UTC"), "hour") - INGEST_LAG - hours(1),
-    0, 0
-  )
+establish_session <- function(probe_dt) {
+  probe_url <- build_nldas_url(probe_dt, 0, 0)
   res <- GET(
     probe_url,
     config(netrc = TRUE, netrc_file = NETRC_PATH, followlocation = TRUE,
@@ -75,6 +74,22 @@ establish_session <- function() {
     stop("Failed to establish EDL session (HTTP ", status_code(res), ") - check EARTHDATA_USER/EARTHDATA_PASSWORD")
   }
   invisible(NULL)
+}
+
+## LATEST GRANULE ==============================================================
+
+latest_granule_time <- function() {
+  res <- GET(
+    "https://cmr.earthdata.nasa.gov/search/granules.json",
+    query = list(collection_concept_id = COLLECTION_ID, sort_key = "-start_date", page_size = 1),
+    timeout(60)
+  )
+  if (status_code(res) != 200) {
+    stop("CMR granule search failed (HTTP ", status_code(res), ")")
+  }
+  entry <- content(res, "parsed")$feed$entry
+  if (length(entry) == 0) stop("CMR returned no granules for ", COLLECTION_ID)
+  ymd_hms(entry[[1]]$time_start, tz = "UTC")
 }
 
 ## GRID HELPERS ================================================================
@@ -133,7 +148,7 @@ start_ts <- if (!is.null(existing) && nrow(existing) > 0) {
   MIN_START_DATE
 }
 start_ts <- max(start_ts, MIN_START_DATE)
-end_ts <- floor_date(with_tz(Sys.time(), "UTC"), "hour") - INGEST_LAG
+end_ts <- latest_granule_time()
 
 if (start_ts >= end_ts) {
   message("Nothing new to fetch")
@@ -148,7 +163,7 @@ message(
 
 ## FETCH (parallel) =============================================================
 
-establish_session()
+establish_session(end_ts)
 
 plan(multisession, workers = min(MAX_WORKERS, future::availableCores()))
 
