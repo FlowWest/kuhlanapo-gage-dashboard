@@ -34,8 +34,14 @@ if ("location_id" %in% names(old)) {
     select(all_of(SCHEMA_COLS)) |>
     arrange(name, timestamp)
 
-  hydrovur::hv_validate_readings(new, schema_cols = SCHEMA_COLS)
-  stopifnot(nrow(new) == nrow(old),
+  # same checks as hydrovur::hv_validate_readings(), without making hydrovur
+  # (a private package) a dependency rsconnect finds when bundling the app
+  key_cols <- c("location_id", "parameter_id", "timestamp")
+  stopifnot(!anyNA(new[key_cols]),
+            !anyDuplicated(new[key_cols]),
+            inherits(new$timestamp, "POSIXct"),
+            is.numeric(new$value),
+            nrow(new) == nrow(old),
             identical(new$value, arrange(old, name, timestamp)$value))
 
   saveRDS(new, DATA_FILE)
