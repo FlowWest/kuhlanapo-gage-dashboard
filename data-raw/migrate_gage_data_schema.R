@@ -1,7 +1,7 @@
 # data-raw/migrate_gage_data_schema.R
 #
 # One-off migration of data/gage_data.rds from the hand-rolled HydroVu schema
-# to the standardized hydrovur schema used by scripts/fetch_hydrovu.R:
+# to the standardized rhydrovu schema used by scripts/fetch_hydrovu.R:
 #
 #   id          (dbl) -> location_id    (chr)
 #   parameterId       -> parameter_id
@@ -9,7 +9,7 @@
 #   parm_name         -> parameter_name
 #
 # The location metadata columns (description, gps.latitude, gps.longitude)
-# are dropped -- hydrovur doesn't carry them and nothing downstream uses them.
+# are dropped -- rhydrovu doesn't carry them and nothing downstream uses them.
 # Safe to re-run: a file already in the new schema is left untouched.
 library(dplyr)
 
@@ -21,7 +21,7 @@ SCHEMA_COLS <- c("location_id", "name", "code", "site", "type", "category",
 old <- readRDS(DATA_FILE)
 
 if ("location_id" %in% names(old)) {
-  message("Already in hydrovur schema; nothing to do.")
+  message("Already in rhydrovu schema; nothing to do.")
 } else {
   # HydroVu location ids are < 2^53, so the double -> character conversion is
   # exact; "%.0f" avoids the scientific notation as.character() would give
@@ -34,8 +34,9 @@ if ("location_id" %in% names(old)) {
     select(all_of(SCHEMA_COLS)) |>
     arrange(name, timestamp)
 
-  # same checks as hydrovur::hv_validate_readings(), without making hydrovur
-  # (a private package) a dependency rsconnect finds when bundling the app
+  # same checks as rhydrovu::hv_validate_readings(), without making rhydrovu
+  # (a GitHub-only package the app doesn't need) a dependency rsconnect finds
+  # when bundling the app
   key_cols <- c("location_id", "parameter_id", "timestamp")
   stopifnot(!anyNA(new[key_cols]),
             !anyDuplicated(new[key_cols]),
@@ -45,5 +46,5 @@ if ("location_id" %in% names(old)) {
             identical(new$value, arrange(old, name, timestamp)$value))
 
   saveRDS(new, DATA_FILE)
-  message("Migrated ", format(nrow(new), big.mark = ","), " rows to hydrovur schema.")
+  message("Migrated ", format(nrow(new), big.mark = ","), " rows to rhydrovu schema.")
 }
