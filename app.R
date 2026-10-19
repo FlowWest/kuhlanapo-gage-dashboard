@@ -36,8 +36,8 @@ rds_url_lakelevel <- "https://github.com/flowwest/kuhlanapo-gage-dashboard/raw/d
 
 nasa_cache_dir <- file.path(getwd(), ".cache", "nasa")
 dir.create(nasa_cache_dir, recursive = TRUE, showWarnings = FALSE)
-cache_data_file_precip <- file.path(usgs_cache_dir, "precip_ts.rds")
-cache_lock_file_precip <- file.path(usgs_cache_dir, "refresh.lock")
+cache_data_file_precip <- file.path(nasa_cache_dir, "precip_ts.rds")
+cache_lock_file_precip <- file.path(nasa_cache_dir, "refresh.lock")
 rds_url_precip <- "https://github.com/flowwest/kuhlanapo-gage-dashboard/raw/data/data/precip_ts.rds"
 
 FORCE_LOCAL <- F
@@ -197,8 +197,12 @@ cache_is_stale <- function(cache_data_file) {
   ttl_stale || force_stale
 }
 
-refresh_cache_async <- function(cache_lock_file, rds_url) {
-  
+# Downloads `rds_url` and merges it into `cache_data_file`, deduplicating on
+# `key_cols` (upstream rows win, so revised values replace cached ones).
+# `prep` is applied to both the upstream and cached data before merging.
+refresh_cache_async <- function(cache_data_file, cache_lock_file, rds_url,
+                                key_cols, prep = identity) {
+
   if (file.exists(cache_lock_file)) {
     message("[cache:refresh] skipped (lock exists)")
     return(invisible(FALSE))
@@ -227,8 +231,9 @@ refresh_cache_async <- function(cache_lock_file, rds_url) {
       message("[cache:refresh] downloading upstream RDS")
       download.file(rds_url, tmp_file, mode = "wb", quiet = TRUE)
       
-      new_data <- standardize_hydrovu_cols(readRDS(tmp_file))
-      old_data <- standardize_hydrovu_cols(read_cached_data(cache_data_file_hydrovu))
+      new_data <- prep(readRDS(tmp_file))
+      old_data <- read_cached_data(cache_data_file)
+      if (!is.null(old_data)) old_data <- prep(old_data)
       
       message(
         sprintf(
@@ -239,8 +244,8 @@ refresh_cache_async <- function(cache_lock_file, rds_url) {
       )
       
       combined <- if (!is.null(old_data)) {
-        bind_rows(old_data, new_data) |>
-          distinct(name, timestamp, parameter_name, .keep_all = TRUE)
+        bind_rows(new_data, old_data) |>
+          distinct(across(all_of(key_cols)), .keep_all = TRUE)
       } else {
         new_data
       }
@@ -252,7 +257,7 @@ refresh_cache_async <- function(cache_lock_file, rds_url) {
         )
       )
       
-      write_cache(combined, cache_data_file_hydrovu)
+      write_cache(combined, cache_data_file)
       
       message("[cache:refresh] refresh SUCCESS")
       
@@ -601,7 +606,9 @@ server <- function(input, output, session) {
 
     if (cache_is_stale(cache_data_file_hydrovu)) {
       message("[cache:decision] cache is stale → triggering async refresh")
-      refresh_cache_async(cache_lock_file_hydrovu, rds_url_hydrovu)
+      refresh_cache_async(cache_data_file_hydrovu, cache_lock_file_hydrovu, rds_url_hydrovu,
+                          key_cols = c("name", "timestamp", "parameter_name"),
+                          prep = standardize_hydrovu_cols)
     } else {
       message("[cache:decision] cache is fresh → no refresh")
     }
@@ -625,7 +632,8 @@ server <- function(input, output, session) {
     
     if (cache_is_stale(cache_data_file_lakelevel)) {
       message("[cache:decision] cache is stale → triggering async refresh")
-      refresh_cache_async(cache_lock_file_lakelevel, rds_url_lakelevel)
+      refresh_cache_async(cache_data_file_lakelevel, cache_lock_file_lakelevel, rds_url_lakelevel,
+                          key_cols = c("name", "timestamp", "parm_name"))
     } else {
       message("[cache:decision] cache is fresh → no refresh")
     }
@@ -654,7 +662,8 @@ server <- function(input, output, session) {
     
     if (cache_is_stale(cache_data_file_precip)) {
       message("[cache:decision] cache is stale → triggering async refresh")
-      refresh_cache_async(cache_lock_file_precip, rds_url_precip)
+      refresh_cache_async(cache_data_file_precip, cache_lock_file_precip, rds_url_precip,
+                          key_cols = c("site", "timestamp"))
     } else {
       message("[cache:decision] cache is fresh → no refresh")
     }
