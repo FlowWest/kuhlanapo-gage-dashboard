@@ -22,6 +22,11 @@ INTERACTIVE <- TRUE
 CACHE_TTL <- 24 * 60 * 60
 FORCE_REFRESH_TIME_PT <- hm("08:00")
 
+# Run cache refreshes in background R sessions so they don't block the app.
+# workers is explicit because availableCores() can be 1 on shinyapps.io, which
+# would silently fall back to running futures in the main process.
+plan(multisession, workers = 2)
+
 cache_dir_hydrovu <- file.path(getwd(), ".cache", "hydrovu")
 dir.create(cache_dir_hydrovu, recursive = TRUE, showWarnings = FALSE)
 cache_data_file_hydrovu <- file.path(cache_dir_hydrovu, "gage_data.rds")
@@ -217,8 +222,8 @@ refresh_cache_async <- function(cache_data_file, cache_lock_file, rds_url,
     )
   )
   
-  future::future({
-    
+  f <- future::future({
+
     on.exit({
       unlink(cache_lock_file)
       message("[cache:refresh] lock released")
@@ -266,7 +271,16 @@ refresh_cache_async <- function(cache_data_file, cache_lock_file, rds_url,
     })
     
     TRUE
-  })
+  }, packages = "dplyr", seed = NULL)
+
+  # Collect the result once the worker finishes; this relays the worker's
+  # [cache:refresh] messages to the app log and frees the worker
+  promises::then(
+    f,
+    onRejected = function(e) message("[cache:refresh] worker FAILED: ", conditionMessage(e))
+  )
+
+  invisible(f)
 }
 
 ## UI ==========================================================================
