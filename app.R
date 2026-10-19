@@ -22,10 +22,11 @@ INTERACTIVE <- TRUE
 CACHE_TTL <- 24 * 60 * 60
 FORCE_REFRESH_TIME_PT <- hm("08:00")
 
-# Run cache refreshes in background R sessions so they don't block the app.
-# workers is explicit because availableCores() can be 1 on shinyapps.io, which
-# would silently fall back to running futures in the main process.
-plan(multisession, workers = 2)
+# No future plan is set, so cache refreshes run sequentially in the main
+# process. plan(multisession) was tried, but on the 1 GB "large" shinyapps.io
+# instance the idle workers plus the main process's ~800 MB peak while
+# building df_pivot triggered OOM kills -- and a refresh worker would need its
+# own copy of gage_data.rds on top of that. Revisit with a larger instance.
 
 cache_dir_hydrovu <- file.path(getwd(), ".cache", "hydrovu")
 dir.create(cache_dir_hydrovu, recursive = TRUE, showWarnings = FALSE)
