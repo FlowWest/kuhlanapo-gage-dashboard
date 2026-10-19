@@ -263,8 +263,8 @@ clean_piezo_depth <- function(timestamp, depth, hard_max = 18,
   )
 }
 
-# Rename pre-hydrovur HydroVu columns (id, parameterId, unitId, parm_name) to
-# the standardized hydrovur names. A no-op on data already in the new schema;
+# Rename pre-rhydrovu HydroVu columns (id, parameterId, unitId, parm_name) to
+# the standardized rhydrovu names. A no-op on data already in the new schema;
 # only needed while the deployed app may still see an old-schema gage_data.rds
 # (upstream on the data branch, or in its on-disk cache).
 standardize_hydrovu_cols <- function(df) {

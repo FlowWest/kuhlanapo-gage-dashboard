@@ -50,12 +50,12 @@ jobs:
 
       - name: Install R packages
         uses: r-lib/actions/setup-r-dependencies@v2
-        # uncomment below to add a token if hydrovur is a private repo
+        # uncomment below to add a token if rhydrovu is a private repo
         # env:
-        #   GITHUB_PAT: ${{ secrets.HYDROVUR_PAT || github.token }}
+        #   GITHUB_PAT: ${{ secrets.RHYDROVU_PAT || github.token }}
         with:
           packages: |
-            github::FlowWest/hydrovur
+            github::FlowWest/rhydrovu
             here
             dplyr
             lubridate

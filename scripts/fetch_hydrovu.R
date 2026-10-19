@@ -1,5 +1,5 @@
 # scripts/fetch_hydrovu.R
-library(hydrovur)
+library(rhydrovu)
 library(dplyr)
 library(lubridate)
 
