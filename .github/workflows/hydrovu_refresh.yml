@@ -52,15 +52,13 @@ jobs:
         uses: r-lib/actions/setup-r-dependencies@v2
         with:
           packages: |
-            httr
-            jsonlite
+            github::FlowWest/hydrovur
+            here
             dplyr
             lubridate
-            tidyr
-            purrr
             tibble
             forcats
-            stringr
+            RColorBrewer
 
       - name: Fetch HydroVu data
         env:

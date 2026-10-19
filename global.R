@@ -263,6 +263,18 @@ clean_piezo_depth <- function(timestamp, depth, hard_max = 18,
   )
 }
 
+# Rename pre-hydrovur HydroVu columns (id, parameterId, unitId, parm_name) to
+# the standardized hydrovur names. A no-op on data already in the new schema;
+# only needed while the deployed app may still see an old-schema gage_data.rds
+# (upstream on the data branch, or in its on-disk cache).
+standardize_hydrovu_cols <- function(df) {
+  if (is.null(df) || "location_id" %in% names(df)) return(df)
+  df |>
+    rename(any_of(c(location_id = "id", parameter_id = "parameterId",
+                    unit_id = "unitId", parameter_name = "parm_name"))) |>
+    mutate(across(any_of("location_id"), \(x) sprintf("%.0f", x)))
+}
+
 # Build the cleaned, pivoted gage/piezometer time series used by both app.R
 # and data-raw/report_figures.Rmd. Keeping this in one place means the two
 # can never drift out of sync the way the piezometer depth cleaning did.
@@ -280,27 +292,27 @@ build_df_pivot <- function(ts_data, ll_data) {
   # the join below -- an exact-timestamp join against the raw schedule would
   # almost never match.
   barotroll_baro <- ts_data |>
-    filter(name == "2025BAROK01", parm_name == "Baro") |>
+    filter(name == "2025BAROK01", parameter_name == "Baro") |>
     mutate(timestamp = lubridate::round_date(timestamp, "15 minutes")) |>
     summarise(baro_fallback = mean(value), .by = timestamp)
 
   ts_data |>
     filter(name != "2025BAROK01") |>
     inner_join(sites |> select(code, category)) |>
-    filter(parm_name %in% c("Depth", "Temperature", "Baro")) |>
-    mutate(parm_name_modified = case_when(
-      parm_name == "Temperature" & type == "vulink" ~ "Air Temperature",
-      parm_name == "Temperature" ~ "Water Temperature",
-      TRUE ~ parm_name
+    filter(parameter_name %in% c("Depth", "Temperature", "Baro")) |>
+    mutate(parameter_name_modified = case_when(
+      parameter_name == "Temperature" & type == "vulink" ~ "Air Temperature",
+      parameter_name == "Temperature" ~ "Water Temperature",
+      TRUE ~ parameter_name
     )) |>
     # convert units. also, depth readings less than zero are invalid
     mutate(value = case_when(
-      parm_name == "Depth" ~ if_else(value > 0, value / 0.3048, 0),
-      parm_name == "Temperature" ~ value * 9 / 5 + 32,
-      parm_name == "Baro" ~ value
+      parameter_name == "Depth" ~ if_else(value > 0, value / 0.3048, 0),
+      parameter_name == "Temperature" ~ value * 9 / 5 + 32,
+      parameter_name == "Baro" ~ value
     )) |>
-    select(category, code, site, timestamp, parm_name_modified, value) |>
-    pivot_wider(names_from = parm_name_modified, values_from = value) |>
+    select(category, code, site, timestamp, parameter_name_modified, value) |>
+    pivot_wider(names_from = parameter_name_modified, values_from = value) |>
     clean_names() |>
     # fill gaps in a piezometer's own Baro reading from the BaroTroll, the
     # source of truth for all piezometers -- so a gap in one device's own

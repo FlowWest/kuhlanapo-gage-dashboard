@@ -104,19 +104,19 @@ saveRDS(idw_obj, here::here("data-raw", "idw_precomputed.rds"))
 
 df_pivot <- gage_data |>
   inner_join(sites |> select(code, category)) |>
-  filter(parm_name %in% c("Depth", "Temperature")) |>
-  mutate(parm_name_modified = case_when(
-    parm_name == "Temperature" & type == "vulink" ~ "Air Temperature",
-    parm_name == "Temperature" ~ "Water Temperature",
-    TRUE ~ parm_name
+  filter(parameter_name %in% c("Depth", "Temperature")) |>
+  mutate(parameter_name_modified = case_when(
+    parameter_name == "Temperature" & type == "vulink" ~ "Air Temperature",
+    parameter_name == "Temperature" ~ "Water Temperature",
+    TRUE ~ parameter_name
   )) |>
   # convert units. also, depth readings less than zero are invalid
   mutate(value = case_when(
-    parm_name == "Depth" ~ if_else(value > 0, value / 0.3048, 0),
-    parm_name == "Temperature" ~ value * 9 / 5 + 32
+    parameter_name == "Depth" ~ if_else(value > 0, value / 0.3048, 0),
+    parameter_name == "Temperature" ~ value * 9 / 5 + 32
   )) |>
-  select(category, code, site, timestamp, parm_name_modified, value) |>
-  pivot_wider(names_from = parm_name_modified, values_from = value) |>
+  select(category, code, site, timestamp, parameter_name_modified, value) |>
+  pivot_wider(names_from = parameter_name_modified, values_from = value) |>
   janitor::clean_names() |>
   # if troll is freezing, depth reading is invalid
   group_by(category, code, site) |>

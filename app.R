@@ -107,13 +107,14 @@ message(
 ## DATA DEFINITIONS =============================================================
 
 empty_ts_schema <- tibble(
+  location_id = character(),
   code = character(),
   site = character(),
   name = character(),
   type = character(),
-  parameterId = character(),
-  unitId = character(),
-  parm_name = character(),
+  parameter_id = character(),
+  unit_id = character(),
+  parameter_name = character(),
   timestamp = as.POSIXct(character(), tz = "UTC"),
   value = numeric()
 )
@@ -226,8 +227,8 @@ refresh_cache_async <- function(cache_lock_file, rds_url) {
       message("[cache:refresh] downloading upstream RDS")
       download.file(rds_url, tmp_file, mode = "wb", quiet = TRUE)
       
-      new_data <- readRDS(tmp_file)
-      old_data <- read_cached_data(cache_data_file_hydrovu)
+      new_data <- standardize_hydrovu_cols(readRDS(tmp_file))
+      old_data <- standardize_hydrovu_cols(read_cached_data(cache_data_file_hydrovu))
       
       message(
         sprintf(
@@ -239,7 +240,7 @@ refresh_cache_async <- function(cache_lock_file, rds_url) {
       
       combined <- if (!is.null(old_data)) {
         bind_rows(old_data, new_data) |>
-          distinct(name, timestamp, parm_name, .keep_all = TRUE)
+          distinct(name, timestamp, parameter_name, .keep_all = TRUE)
       } else {
         new_data
       }
@@ -588,16 +589,16 @@ server <- function(input, output, session) {
     
     if((file.exists(here::here("data/gage_data.rds"))) && FORCE_LOCAL) {
       message("FORCE_LOCAL is on; using data/gage_data.rds locally")
-      return(readRDS(here::here("data/gage_data.rds")))
+      return(standardize_hydrovu_cols(readRDS(here::here("data/gage_data.rds"))))
     }
-    
+
     if (!file.exists(cache_data_file_hydrovu)) {
       message("[cache:bootstrap] no cache → downloading initial copy")
       download.file(rds_url_hydrovu, cache_data_file_hydrovu, mode = "wb", quiet = TRUE)
     }
     
-    df <- read_cached_data(cache_data_file_hydrovu)
-    
+    df <- standardize_hydrovu_cols(read_cached_data(cache_data_file_hydrovu))
+
     if (cache_is_stale(cache_data_file_hydrovu)) {
       message("[cache:decision] cache is stale → triggering async refresh")
       refresh_cache_async(cache_lock_file_hydrovu, rds_url_hydrovu)
