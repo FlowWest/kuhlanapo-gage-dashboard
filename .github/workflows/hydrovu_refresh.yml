@@ -50,6 +50,10 @@ jobs:
 
       - name: Install R packages
         uses: r-lib/actions/setup-r-dependencies@v2
+        env:
+          # hydrovur is a private repo; the default GITHUB_TOKEN can only read
+          # this repo, so a PAT with read access to FlowWest/hydrovur is needed
+          GITHUB_PAT: ${{ secrets.HYDROVUR_PAT || github.token }}
         with:
           packages: |
             github::FlowWest/hydrovur
