@@ -51,18 +51,14 @@ jobs:
         uses: r-lib/actions/setup-r-dependencies@v2
         with:
           packages: |
-            httr
+            httr2
+            jsonlite
             dplyr
             lubridate
-            stringr
-            terra
-
-      - name: Install inldata from USGS
-        run: |
-          Rscript -e 'install.packages("remotes")'
-          Rscript -e 'remotes::install_git("https://code.usgs.gov/inl/inldata.git", upgrade = "never")'
 
       - name: Fetch USGS lake level data
+        env:
+          API_USGS_PAT: ${{ secrets.API_USGS_PAT }}
         run: |
           Rscript scripts/fetch_usgs_lake_level.R
 
