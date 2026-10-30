@@ -314,6 +314,12 @@ build_df_pivot <- function(ts_data, ll_data) {
     select(category, code, site, timestamp, parameter_name_modified, value) |>
     pivot_wider(names_from = parameter_name_modified, values_from = value) |>
     clean_names() |>
+    # pivot_wider() orders rows by first appearance, so a timestamp only one
+    # device logged (e.g. a VuLink reading with no matching troll reading)
+    # lands at the end of its site's rows. Re-sort so the lag()/lead() checks
+    # below see neighbors in time order and plotly doesn't draw a line from
+    # the series end back to that orphan point.
+    arrange(category, code, site, timestamp) |>
     # fill gaps in a piezometer's own Baro reading from the BaroTroll, the
     # source of truth for all piezometers -- so a gap in one device's own
     # Baro channel (e.g. PZ-C3's 2026-02-05 to 2026-03-15 gap) doesn't read

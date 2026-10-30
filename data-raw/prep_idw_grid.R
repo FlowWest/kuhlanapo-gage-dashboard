@@ -118,6 +118,8 @@ df_pivot <- gage_data |>
   select(category, code, site, timestamp, parameter_name_modified, value) |>
   pivot_wider(names_from = parameter_name_modified, values_from = value) |>
   janitor::clean_names() |>
+  # pivot_wider() orders rows by first appearance; restore time order for lag()
+  arrange(category, code, site, timestamp) |>
   # if troll is freezing, depth reading is invalid
   group_by(category, code, site) |>
   mutate(depth = if_else((water_temperature > 32) & 
