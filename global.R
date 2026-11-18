@@ -80,18 +80,36 @@ piezo_colors <- tribble(
 ) |> deframe()
 
 piezo_meta <- tribble(
-  ~name,        ~gse_ft_navd88,  ~tdx_ft_navd88,
-  "2025PZA01",  1329.250,        1323.550,
-  "2025PZA02",  1326.214,        1321.964,
-  "2025PZA03",  1328.249,        1321.604,
-  "2025PZB01",  1326.417,        1322.147,
-  "2025PZB02",  1326.019,        1323.079,
-  "2025PZB03",  1329.669,        1322.189,
-  "2025PZB04",  1331.618,        1322.918,
-  "2025PZC01",  1330.484,        1322.609,
-  "2025PZC02",  1328.072,        1323.287,
-  "2025PZC03",  1333.552,        1327.207,
-) 
+  # effective_date: first date (America/Los_Angeles) a row applies. NA = applies
+  # from the beginning of record. Readings are never retroactively re-referenced.
+  ~name,        ~gse_ft_navd88,  ~tdx_ft_navd88, ~effective_date,
+  "2025PZA01",  1329.250,        1323.550,       NA,
+  "2025PZA02",  1326.214,        1321.964,       NA,
+  "2025PZA02",  1326.254,        1322.024,       ymd("2026-11-17"),
+  "2025PZA03",  1328.249,        1321.604,       NA,
+  "2025PZA03",  1328.319,        1321.789,       ymd("2026-11-17"),
+  "2025PZB01",  1326.417,        1322.147,       NA,
+  "2025PZB02",  1326.019,        1323.079,       NA,
+  "2025PZB03",  1329.669,        1322.189,       NA,
+  "2025PZB04",  1331.618,        1322.918,       NA,
+  "2025PZC01",  1330.484,        1322.609,       NA,
+  "2025PZC02",  1328.072,        1323.287,       NA,
+  "2025PZC03",  1333.552,        1327.207,       NA,
+) |>
+  mutate(effective_date = as.Date(effective_date),
+         # start of the effective day, local time; -Inf = start of record
+         effective_from = if_else(is.na(effective_date),
+                                  as.POSIXct(-Inf, tz = "America/Los_Angeles"),
+                                  force_tz(as.POSIXct(effective_date), "America/Los_Angeles")))
+
+# Attach the piezometer survey values in effect at each reading's timestamp.
+# Needs `name` and `timestamp` columns; adds gse_ft_navd88 and tdx_ft_navd88.
+join_piezo_meta <- function(df) {
+  df |>
+    left_join(piezo_meta |> select(name, gse_ft_navd88, tdx_ft_navd88, effective_from),
+              by = join_by(name, closest(timestamp >= effective_from))) |>
+    select(-effective_from)
+}
 
 match_lab_lightness <- function(in_color,
                                 template_color = NULL,
@@ -348,7 +366,7 @@ build_df_pivot <- function(ts_data, ll_data) {
     # GROUNDWATER DEPTH AND ELEVATION
     # correct piezometer for well depth and calculate piezometer GWE
     inner_join(sensors |> filter(type == "troll") |> select(code, name), by = join_by(code)) |>
-    left_join(piezo_meta |> select(name, gse_ft_navd88, tdx_ft_navd88), by = join_by(name)) |>
+    join_piezo_meta() |>
     # remove piezometer depth readings caused by trolls being pulled from
     # the well for maintenance
     group_by(category, site) |>

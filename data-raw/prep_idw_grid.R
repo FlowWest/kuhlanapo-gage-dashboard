@@ -137,7 +137,7 @@ df_pivot <- gage_data |>
 # GROUNDWATER DEPTH AND ELEVATION
 # correct piezometer for well depth and calculate piezometer GWE
 inner_join(sensors |> filter(type == "troll") |> select(code, name), by = join_by(code)) |>
-  left_join(piezo_meta |> select(name, gse_ft_navd88, tdx_ft_navd88), by = join_by(name)) |>
+  join_piezo_meta() |>
   # smooth spikes of length one in groundwater depth, eliminate other spikes
   group_by(category, site) |>
   mutate(depth = if_else(category == "Piezometer",
