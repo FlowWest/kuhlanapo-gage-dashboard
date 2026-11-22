@@ -375,7 +375,10 @@ build_df_pivot <- function(ts_data, ll_data) {
                            depth)) |>
     ungroup() |>
     # calculate groundwater elevation
-    mutate(gwe_ft_navd88 = if_else(category == "Piezometer",
+    # depth of 0 means the water is below the transducer (dry well), so the
+    # true groundwater elevation is unknown -- show a gap, not a flatline at
+    # the transducer elevation
+    mutate(gwe_ft_navd88 = if_else(category == "Piezometer" & depth > 0,
                                    tdx_ft_navd88 + depth,
                                    NA),
            gw_depth_ft = if_else(category == "Piezometer",

@@ -772,7 +772,12 @@ server <- function(input, output, session) {
       
       df_ll_plot <- base_df |>
         select(timestamp, lake_level) |>
-        distinct()  # collapse duplicates so only one trace
+        filter(!is.na(lake_level)) |>
+        # one point per timestamp, in time order: base_df is stacked by site,
+        # so without this the series doubles back on itself and the fill
+        # polygon self-intersects
+        distinct(timestamp, .keep_all = TRUE) |>
+        arrange(timestamp)
       
       # ---- Lake level traces ----
       p <- add_trace(
