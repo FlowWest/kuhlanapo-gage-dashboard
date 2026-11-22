@@ -102,6 +102,18 @@ piezo_meta <- tribble(
                                   as.POSIXct(-Inf, tz = "America/Los_Angeles"),
                                   force_tz(as.POSIXct(effective_date), "America/Los_Angeles")))
 
+# Elevation (ft NAVD88) of each barometric-reference Troll, used to adjust baro
+# to each transducer's elevation (see submerged_depth_ft()). NA means no
+# elevation correction is applied.
+# 2025BAROK01 hangs at the PZ-B4 site, ~3 ft above B4's ground surface
+# (1331.618 ft). APPROXIMATE -- replace with the surveyed elevation. The
+# transducer elevations (tdx_ft_navd88 in piezo_meta, 1321.6-1327.2) are
+# ~7-13 ft below that, i.e. a correction of about 0.01 ft of water.
+baro_meta <- tribble(
+  ~name,         ~z_baro_ft_navd88,
+  "2025BAROK01", 1331.618 + 3,
+)
+
 # Attach the piezometer survey values in effect at each reading's timestamp.
 # Needs `name` and `timestamp` columns; adds gse_ft_navd88 and tdx_ft_navd88.
 join_piezo_meta <- function(df) {
@@ -235,6 +247,72 @@ interpolate_idw_at_time <- function(
   }
 }
 
+# Mask piezometer readings taken while the transducer was not submerged -- dry
+# well or troll pulled to the surface; both become NA, so they aren't told apart.
+#
+# `pressure_psi` is the troll's baromerged (gauge) pressure and `baro_psi` the
+# barometric pressure it was merged against. diff_ft = (P_trans - P_baro_adj) /
+# 2.99 kPa/ft is the water depth over the sensor plus a sensor-specific zero
+# offset (`air_zero`), which is estimated empirically per call (i.e. per
+# sensor) as the mode of the near-zero cluster -- not the median, which gets
+# dragged up by genuine shallow water.
+#
+# Elevation correction: baro is taken at z_baro_ft and the transducer sits at
+# z_trans_ft (same vertical datum). Baro is adjusted to the transducer's
+# elevation, P_baro_adj = P_baro * exp(g dz / (R T)), dz = z_baro - z_trans (m).
+# This assumes the baromerge itself applied NO elevation term (it subtracts
+# baro as logged). A constant elevation difference is also absorbed by
+# air_zero, so with both active the explicit term only matters for the part
+# air_zero can't see (poorly constrained air_zero, or z_trans changing between
+# deployments). If z_baro_ft is NA no elevation correction is applied.
+#
+# Returns water depth above the sensor (ft), NA wherever not submerged.
+# Inputs must be ordered by time within a single sensor.
+submerged_depth_ft <- function(pressure_psi, baro_psi, z_baro_ft, z_trans_ft,
+                               wet_thresh_ft = 0.15, min_wet_run = 4,
+                               air_window_ft = 0.15, min_air_n = 30,
+                               kpa_per_ft = 2.99, air_temp_k = 288.15) {
+  psi_to_kpa <- 6.894757
+  p_gauge <- pressure_psi * psi_to_kpa
+  p_baro  <- baro_psi * psi_to_kpa
+
+  # Task 2: adjust baro to the transducer's elevation (skip if unknown)
+  dz_m <- (z_baro_ft - z_trans_ft) * 0.3048
+  adj  <- ifelse(is.na(dz_m) | is.na(p_baro), 0,
+                 p_baro * (exp(9.80665 * dz_m / (287.05 * air_temp_k)) - 1))
+  # (P_trans_abs - P_baro_adj) with P_trans_abs = P_gauge + P_baro
+  diff_ft <- (p_gauge - adj) / kpa_per_ft
+
+  # air zero. Preferred: readings taken at the surface -- a sudden drop to
+  # ~0 from over 1 ft of water within the previous 3 readings (troll pulled).
+  # These are unambiguous even for a well that never dries out, where the
+  # near-zero cluster is real shallow water, not the instrument's air offset.
+  # Fallback: mode of the density of near-zero readings (a dry well's stable
+  # plateau). If neither is available, no offset is removed.
+  near_zero <- !is.na(diff_ft) & abs(diff_ft) <= air_window_ft
+  prev_hi <- pmax(dplyr::lag(diff_ft, 1), dplyr::lag(diff_ft, 2),
+                  dplyr::lag(diff_ft, 3), na.rm = TRUE)
+  surface <- diff_ft[near_zero & !is.na(prev_hi) & prev_hi > 1]
+  near <- diff_ft[near_zero]
+  air_zero <- if (length(surface) >= 1) {
+    stats::median(surface)
+  } else if (length(near) >= min_air_n) {
+    dens <- stats::density(near, bw = 0.01, from = -air_window_ft, to = air_window_ft)
+    dens$x[which.max(dens$y)]
+  } else 0
+
+  depth_ft <- diff_ft - air_zero
+  wet_raw  <- !is.na(depth_ft) & depth_ft > wet_thresh_ft
+
+  # drop short wet blips (shorter than min_wet_run consecutive readings);
+  # short dry runs stay dry -- those are real air readings
+  r <- rle(wet_raw)
+  run_len <- rep(r$lengths, r$lengths)
+  wet <- wet_raw & run_len >= min_wet_run
+
+  if_else(wet, depth_ft, NA_real_)
+}
+
 # Null out piezometer depth readings that don't line up with their nearest
 # in-time neighbor -- caused by trolls being pulled from the well for
 # periodic data download/recalibration, which shows up as either a single
@@ -317,7 +395,7 @@ build_df_pivot <- function(ts_data, ll_data) {
   ts_data |>
     filter(name != "2025BAROK01") |>
     inner_join(sites |> select(code, category)) |>
-    filter(parameter_name %in% c("Depth", "Temperature", "Baro")) |>
+    filter(parameter_name %in% c("Depth", "Temperature", "Baro", "Pressure")) |>
     mutate(parameter_name_modified = case_when(
       parameter_name == "Temperature" & type == "vulink" ~ "Air Temperature",
       parameter_name == "Temperature" ~ "Water Temperature",
@@ -327,7 +405,9 @@ build_df_pivot <- function(ts_data, ll_data) {
     mutate(value = case_when(
       parameter_name == "Depth" ~ if_else(value > 0, value / 0.3048, 0),
       parameter_name == "Temperature" ~ value * 9 / 5 + 32,
-      parameter_name == "Baro" ~ value
+      parameter_name == "Baro" ~ value,
+      # baromerged (gauge) pressure and baro both stay in psi
+      parameter_name == "Pressure" ~ value
     )) |>
     select(category, code, site, timestamp, parameter_name_modified, value) |>
     pivot_wider(names_from = parameter_name_modified, values_from = value) |>
@@ -367,6 +447,19 @@ build_df_pivot <- function(ts_data, ll_data) {
     # correct piezometer for well depth and calculate piezometer GWE
     inner_join(sensors |> filter(type == "troll") |> select(code, name), by = join_by(code)) |>
     join_piezo_meta() |>
+    # mask readings taken while a transducer wasn't submerged (dry well, or
+    # pulled to the surface) and re-reference depth to the sensor's air zero
+    # with baro adjusted to the transducer's elevation
+    mutate(z_baro_ft = baro_meta$z_baro_ft_navd88[1]) |>
+    arrange(category, name, timestamp) |>
+    mutate(depth_wet = if_else(category == "Piezometer",
+                               submerged_depth_ft(pressure, baro, z_baro_ft, tdx_ft_navd88),
+                               depth),
+           .by = c(category, name)) |>
+    mutate(depth = depth_wet,
+           water_temperature = if_else(category == "Piezometer" & is.na(depth_wet),
+                                       NA, water_temperature)) |>
+    select(-depth_wet, -z_baro_ft, -pressure) |>
     # remove piezometer depth readings caused by trolls being pulled from
     # the well for maintenance
     group_by(category, site) |>
