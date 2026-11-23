@@ -247,6 +247,30 @@ interpolate_idw_at_time <- function(
   }
 }
 
+# Wet/dry state with hysteresis: a reading becomes wet when depth rises above
+# `on` and stays wet until it falls to `off` or below. A single cutoff makes a
+# series that hovers near it flicker in and out; the gap between on and off
+# stops that. Short wet runs (< min_run readings) are then dropped; short dry
+# runs stay dry -- those are real air readings.
+wet_state <- function(depth_ft, on, off, min_run = 4) {
+  n <- length(depth_ft)
+  wet <- logical(n)
+  state <- FALSE
+  for (i in seq_len(n)) {
+    d <- depth_ft[i]
+    if (is.na(d)) {
+      state <- FALSE
+    } else if (state) {
+      state <- d > off
+    } else {
+      state <- d > on
+    }
+    wet[i] <- state
+  }
+  r <- rle(wet)
+  wet & rep(r$lengths, r$lengths) >= min_run
+}
+
 # Mask piezometer readings taken while the transducer was not submerged -- dry
 # well or troll pulled to the surface; both become NA, so they aren't told apart.
 #
@@ -271,7 +295,7 @@ interpolate_idw_at_time <- function(
 # Inputs must be ordered by time within a single sensor.
 submerged_depth_ft <- function(timestamp, pressure_psi, baro_psi, z_baro_ft, z_trans_ft,
                                plateau_step_psi = 2, plateau_max_hr = 12,
-                               wet_thresh_ft = 0.15, min_wet_run = 4,
+                               wet_on_ft = 0.14, wet_off_ft = 0.07, min_wet_run = 4,
                                air_window_ft = 0.15, min_air_n = 30,
                                kpa_per_ft = 2.99, air_temp_k = 288.15) {
   psi_to_kpa <- 6.894757
@@ -304,7 +328,8 @@ submerged_depth_ft <- function(timestamp, pressure_psi, baro_psi, z_baro_ft, z_t
   } else 0
 
   depth_ft <- diff_ft - air_zero
-  wet_raw  <- !is.na(depth_ft) & depth_ft > wet_thresh_ft
+  # readings inside a field-visit plateau (below) are forced dry
+  bogus <- rep(FALSE, length(depth_ft))
 
   # Field-visit plateaus: during a download visit the pressure jumps by
   # several psi in one reading -- identically across wells of very different
@@ -321,14 +346,11 @@ submerged_depth_ft <- function(timestamp, pressure_psi, baro_psi, z_baro_ft, z_t
     midpoint <- p_before + d_p[i] / 2
     later <- which(seq_len(n) > i & timestamp <= timestamp[i] + plateau_max_hr * 3600 &
                      !is.na(pressure_psi) & pressure_psi < midpoint)
-    if (length(later)) wet_raw[i:(min(later) - 1)] <- FALSE
+    if (length(later)) bogus[i:(min(later) - 1)] <- TRUE
   }
 
-  # drop short wet blips (shorter than min_wet_run consecutive readings);
-  # short dry runs stay dry -- those are real air readings
-  r <- rle(wet_raw)
-  run_len <- rep(r$lengths, r$lengths)
-  wet <- wet_raw & run_len >= min_wet_run
+  depth_ft[bogus] <- NA_real_
+  wet <- wet_state(depth_ft, wet_on_ft, wet_off_ft, min_wet_run)
 
   if_else(wet, depth_ft, NA_real_)
 }
