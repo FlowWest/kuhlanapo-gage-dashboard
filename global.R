@@ -266,9 +266,11 @@ interpolate_idw_at_time <- function(
 # air_zero can't see (poorly constrained air_zero, or z_trans changing between
 # deployments). If z_baro_ft is NA no elevation correction is applied.
 #
-# Returns water depth above the sensor (ft), NA wherever not submerged.
+# Returns water depth above the sensor (ft), NA wherever not submerged (or
+# inside a field-visit pressure plateau, see below).
 # Inputs must be ordered by time within a single sensor.
-submerged_depth_ft <- function(pressure_psi, baro_psi, z_baro_ft, z_trans_ft,
+submerged_depth_ft <- function(timestamp, pressure_psi, baro_psi, z_baro_ft, z_trans_ft,
+                               plateau_step_psi = 2, plateau_max_hr = 12,
                                wet_thresh_ft = 0.15, min_wet_run = 4,
                                air_window_ft = 0.15, min_air_n = 30,
                                kpa_per_ft = 2.99, air_temp_k = 288.15) {
@@ -303,6 +305,24 @@ submerged_depth_ft <- function(pressure_psi, baro_psi, z_baro_ft, z_trans_ft,
 
   depth_ft <- diff_ft - air_zero
   wet_raw  <- !is.na(depth_ft) & depth_ft > wet_thresh_ft
+
+  # Field-visit plateaus: during a download visit the pressure jumps by
+  # several psi in one reading -- identically across wells of very different
+  # depth, with no temperature change, so it is not a real water column -- and
+  # holds for hours until the troll is pulled to the surface or returns to its
+  # baseline. No real water level rises 2 psi (~4.6 ft) in 15 minutes, so a
+  # step that RETURNS within `plateau_max_hr` is bogus, from the step through
+  # the last reading before the return. A step that does not return (troll
+  # simply redeployed after a pull) is left alone.
+  n <- length(pressure_psi)
+  d_p <- c(NA_real_, diff(pressure_psi))
+  for (i in which(!is.na(d_p) & d_p > plateau_step_psi)) {
+    p_before <- pressure_psi[i - 1]
+    midpoint <- p_before + d_p[i] / 2
+    later <- which(seq_len(n) > i & timestamp <= timestamp[i] + plateau_max_hr * 3600 &
+                     !is.na(pressure_psi) & pressure_psi < midpoint)
+    if (length(later)) wet_raw[i:(min(later) - 1)] <- FALSE
+  }
 
   # drop short wet blips (shorter than min_wet_run consecutive readings);
   # short dry runs stay dry -- those are real air readings
@@ -453,7 +473,7 @@ build_df_pivot <- function(ts_data, ll_data) {
     mutate(z_baro_ft = baro_meta$z_baro_ft_navd88[1]) |>
     arrange(category, name, timestamp) |>
     mutate(depth_wet = if_else(category == "Piezometer",
-                               submerged_depth_ft(pressure, baro, z_baro_ft, tdx_ft_navd88),
+                               submerged_depth_ft(timestamp, pressure, baro, z_baro_ft, tdx_ft_navd88),
                                depth),
            .by = c(category, name)) |>
     mutate(depth = depth_wet,
