@@ -401,6 +401,40 @@ clean_piezo_depth <- function(timestamp, depth, hard_max = 18,
   )
 }
 
+# Visually suppress the daily (24 h + 12 h) cycle in a piezometer series.
+# High-passes the series (minus its centered 24 h mean, so storm steps don't
+# leak into the fit), fits sine/cos terms at each period in a rolling window
+# (robust: the worst 10% of residuals are dropped and the fit repeated),
+# interpolates the coefficients between window centers and subtracts the
+# fitted wave from the RAW series. Real events pass through untouched, unlike
+# a plain 24 h running mean, which smears them. Assumes a regular ~15 min
+# series ordered by time within one piezometer.
+remove_diurnal <- function(timestamp, y, periods_h = c(24, 12), win_h = 96,
+                           step_h = 12, k = 96L, min_n = 150) {
+  tt <- as.numeric(timestamp) / 3600
+  hp <- y - data.table::frollmean(y, k, align = "center", na.rm = TRUE)
+  ok <- !is.na(hp)
+  if (sum(ok) < min_n) return(y)
+  X <- do.call(cbind, lapply(periods_h, \(p) cbind(sin(2 * pi * tt / p), cos(2 * pi * tt / p))))
+  cen <- seq(min(tt[ok]), max(tt[ok]), by = step_h)
+  lo <- findInterval(cen - win_h / 2, tt) + 1L
+  hi <- findInterval(cen + win_h / 2, tt)
+  cf <- matrix(NA_real_, length(cen), ncol(X))
+  for (i in seq_along(cen)) {
+    ii <- lo[i]:hi[i]
+    ii <- ii[ok[ii]]
+    if (length(ii) < min_n) next
+    b <- qr.coef(qr(X[ii, ]), hp[ii])
+    r <- abs(hp[ii] - X[ii, ] %*% b)
+    keep <- ii[r <= quantile(r, 0.9)]
+    cf[i, ] <- qr.coef(qr(X[keep, ]), hp[keep])
+  }
+  g <- !is.na(cf[, 1])
+  if (sum(g) < 2) return(y)
+  comp <- rowSums(sapply(seq_len(ncol(X)), \(j) approx(cen[g], cf[g, j], tt, rule = 2)$y * X[, j]))
+  y - comp
+}
+
 # Rename pre-rhydrovu HydroVu columns (id, parameterId, unitId, parm_name) to
 # the standardized rhydrovu names. A no-op on data already in the new schema;
 # only needed while the deployed app may still see an old-schema gage_data.rds
@@ -418,7 +452,7 @@ standardize_hydrovu_cols <- function(df) {
 # can never drift out of sync the way the piezometer depth cleaning did.
 # `ts_data`/`ll_data` must already be resolved data frames (call reactives
 # like `ts_data()` before passing them in).
-build_df_pivot <- function(ts_data, ll_data) {
+build_df_pivot <- function(ts_data, ll_data, smooth = FALSE) {
 
   # 2025BAROK01 (the BaroTroll) is the shared, gap-free atmospheric Baro
   # reference for all piezometers (not the SGMC stage gages). Pulled out as
@@ -508,6 +542,9 @@ build_df_pivot <- function(ts_data, ll_data) {
     mutate(depth = if_else(category == "Piezometer",
                            clean_piezo_depth(timestamp, depth),
                            depth)) |>
+    # optionally suppress the daily groundwater cycle for display (see
+    # remove_diurnal); the app turns it on with ?smooth
+    mutate(depth = if (smooth && first(category) == "Piezometer") remove_diurnal(timestamp, depth) else depth) |>
     ungroup() |>
     # calculate groundwater elevation
     # depth of 0 means the water is below the transducer (dry well), so the

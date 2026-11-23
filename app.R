@@ -290,7 +290,7 @@ ui <- bslib::page_fluid(
 
   # Bootstrap 5 (bslib also adds the width=device-width viewport meta tag)
   theme = bslib::bs_theme(version = 5),
-  title = "Kuhlanapo Gage Dashboard",
+  title = "KuhlaʼNapo Gage Dashboard",
 
   tags$style(HTML("
   html, body {
@@ -568,6 +568,13 @@ server <- function(input, output, session) {
     }
   })
   
+  # ?smooth (or smooth=true/1) suppresses the daily groundwater cycle in the
+  # piezometer series; off by default
+  url_smooth <- reactive({
+    q <- query()
+    !is.null(q$smooth) && q$smooth %in% c("", "1", "true", "TRUE")
+  })
+
   url_show_precip <- reactive({
     q <- query()
     
@@ -853,7 +860,7 @@ server <- function(input, output, session) {
   
   df_pivot <- reactive({
     req(input$date_range)
-    build_df_pivot(ts_data(), ll_data())
+    build_df_pivot(ts_data(), ll_data(), smooth = url_smooth())
     })
   
   filtered_df <- reactive({
