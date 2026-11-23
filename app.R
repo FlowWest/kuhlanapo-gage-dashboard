@@ -286,7 +286,11 @@ refresh_cache_async <- function(cache_data_file, cache_lock_file, rds_url,
 
 ## UI ==========================================================================
 
-ui <- fluidPage(
+ui <- bslib::page_fluid(
+
+  # Bootstrap 5 (bslib also adds the width=device-width viewport meta tag)
+  theme = bslib::bs_theme(version = 5),
+  title = "Kuhlanapo Gage Dashboard",
 
   tags$style(HTML("
   html, body {
@@ -298,11 +302,18 @@ ui <- fluidPage(
      so the plot area (flex: 1) always takes 'whatever's left' after the
      toolbar instead of a fixed vh fraction. A fixed vh fraction plus a
      toolbar on top of it is always > 100% of the container, which is what
-     was forcing an internal scrollbar when embedded in a fixed-height iframe. */
+     was forcing an internal scrollbar when embedded in a fixed-height iframe.
+     dvh follows the phone browser's collapsing address bar; vh is the
+     fallback for browsers without it. */
   .app-flex-col {
     display: flex;
     flex-direction: column;
-    height: 100vh;
+    /* minus the container's top margin so the bottom isn't clipped */
+    height: calc(100vh - 15px);
+    height: calc(100dvh - 15px);
+  }
+  .container-fluid {
+    margin-top: 15px;
   }
   .app-toolbar {
     flex: 0 0 auto;
@@ -321,54 +332,193 @@ ui <- fluidPage(
   .flow-fullwidth > * {
     width: auto !important;
   }
-  .precip-toggle-wrap {
-    display: flex;
-    align-items: center;
-    height: 30px;
-    gap: 8px;
+  /* tighten the toolbar: drop the empty control labels and the form-group
+     bottom margins so wrapped rows sit close together */
+  .app-toolbar label.control-label:empty,
+  .app-toolbar .shiny-input-radiogroup > .control-label,
+  .app-toolbar .shiny-input-radiogroup > br {
+    display: none;
   }
-  .precip-toggle-wrap .shiny-input-container {
+  .app-toolbar .form-group,
+  .app-toolbar .shiny-input-container {
+    margin-bottom: 2px !important;
+  }
+  /* flex rather than inline-block so every control in a row is centered on
+     the same line regardless of its own height (the date input is taller) */
+  .app-toolbar .shiny-flow-layout {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .app-toolbar .shiny-flow-layout > div {
+    margin-bottom: 2px;
+  }
+  .app-toolbar .btn-group {
+    flex-wrap: wrap;
+  }
+  .layer-toggle-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px 16px;
+    min-height: 30px;
+  }
+  .layer-toggle-row .shiny-input-container {
     width: auto !important;
-    margin-bottom: 0;
+    margin: 0 !important;
+    min-height: 0;
+  }
+  .layer-toggle-row .form-check-label {
+    white-space: nowrap;
+  }
+
+  /* The controls live in a one-panel accordion. On desktop it is invisible
+     (header hidden, panel forced open) so the toolbar looks as before; on
+     phones the header becomes a tap-to-open 'Controls' bar. */
+  .controls-wrap {
+    position: relative;
+    flex: 0 0 auto;
+  }
+  .controls-acc {
+    --bs-accordion-border-width: 0;
+    --bs-accordion-bg: transparent;
+  }
+  .controls-acc .accordion-body {
+    padding: 0;
+  }
+  .legend-btn {
+    display: none;
+    position: absolute;
+    right: 40px;
+    top: 5px;
+    z-index: 5;
+  }
+  @media (min-width: 768px) {
+    .controls-acc .accordion-header {
+      display: none;
+    }
+    .controls-acc .accordion-collapse {
+      display: block !important;
+      height: auto !important;
+    }
+  }
+
+  @media (max-width: 767.98px) {
+    .container-fluid {
+      margin-top: 8px;
+      padding-left: 10px;
+      padding-right: 10px;
+    }
+    .app-flex-col {
+      height: calc(100vh - 8px);
+      height: calc(100dvh - 8px);
+    }
+    .controls-acc .accordion-button {
+      padding: 6px 12px;
+      font-size: 0.9rem;
+    }
+    .app-toolbar {
+      padding-top: 8px;
+    }
+    .app-toolbar .flow-fullwidth {
+      width: 100% !important;
+    }
+    .app-toolbar .shiny-flow-layout > div,
+    .app-toolbar .shiny-date-range-input {
+      width: 100%;
+    }
+    .app-toolbar .btn-group-container-sw,
+    .app-toolbar .btn-group {
+      display: flex;
+      width: 100%;
+    }
+    .app-toolbar .btn-group .btn {
+      flex: 1 1 auto;
+    }
+    .layer-toggle-row {
+      width: 100%;
+    }
+    /* the plot's own legend can be toggled on phones (time series only) */
+    .controls-wrap.has-series .legend-btn {
+      display: inline-block;
+    }
   }
 ")),
+
+  # phone-width flag for the server's plot layouts (see is_mobile())
+  tags$script(HTML("
+  window.reportMobile = function() {
+    if (window.Shiny && Shiny.setInputValue) {
+      Shiny.setInputValue('is_mobile', window.innerWidth < 768);
+    }
+  };
+  $(document).on('shiny:connected', window.reportMobile);
+  $(window).on('resize orientationchange', window.reportMobile);
+  // the Legend button only applies to the time series, not the piezo map
+  $(document).on('shiny:inputchanged', function(e) {
+    if (e.name === 'top_metric') {
+      $('.controls-wrap').toggleClass('has-series', e.value !== 'gw_contour');
+    }
+  });
+  ")),
 
   div(
     class = "app-flex-col",
 
     div(
-      class = "app-toolbar",
-      flowLayout(
-        class = "flow-fullwidth",
-        style = "width: 95vw;",
+      class = "controls-wrap has-series",
 
-        uiOutput("date_range_selector"),
+      bslib::accordion(
+        id = "controls_acc",
+        class = "controls-acc",
+        open = FALSE,
+        bslib::accordion_panel(
+          "Controls",
+          value = "controls",
+          div(
+            class = "app-toolbar",
+            flowLayout(
+              class = "flow-fullwidth",
+              style = "width: 95vw;",
 
-        uiOutput("top_metric_selector"),
+              uiOutput("date_range_selector"),
 
-        conditionalPanel(
-          condition = "input.top_metric == 'gw_depth_ft' || input.top_metric == 'gwe_ft_navd88'",
+              uiOutput("top_metric_selector"),
 
-          shinyWidgets::radioGroupButtons(
-            "transect_select",
-            label = "",
-            choices = c(
-              "All Transects" = "all",
-              "A" = "A",
-              "B" = "B",
-              "C" = "C"
-            ),
-            selected = "all",
-            size = "sm"
+              conditionalPanel(
+                condition = "input.top_metric == 'gw_depth_ft' || input.top_metric == 'gwe_ft_navd88'",
+
+                shinyWidgets::radioGroupButtons(
+                  "transect_select",
+                  label = "",
+                  choices = c(
+                    "All Transects" = "all",
+                    "A" = "A",
+                    "B" = "B",
+                    "C" = "C"
+                  ),
+                  selected = "all",
+                  size = "sm"
+                )
+              ),
+
+              uiOutput("precip_toggle_selector"),
+
+              conditionalPanel(
+                condition = "input.top_metric == 'gw_contour'",
+                uiOutput("gw_time_selector")
+              )
+            )
           )
-        ),
-
-        uiOutput("precip_toggle_selector"),
-
-        conditionalPanel(
-          condition = "input.top_metric == 'gw_contour'",
-          uiOutput("gw_time_selector")
         )
+      ),
+
+      # phones only: shows/hides the time series plot's own (plotly) legend
+      tags$button(
+        type = "button",
+        class = "btn btn-sm btn-outline-secondary legend-btn",
+        onclick = "var g = document.getElementById('combined_plot'); if (g && g.layout) Plotly.relayout(g, {showlegend: !g.layout.showlegend});",
+        "Legend"
       )
     ),
 
@@ -443,6 +593,21 @@ server <- function(input, output, session) {
     }
   })
 
+  # Temperature panel (stage views only): on by default; ?show_temp=false hides
+  # it. Like precip, a user-toggleable switch in default mode, URL-only otherwise.
+  url_show_temp <- reactive({
+    q <- query()
+    !(!is.null(q$show_temp) && q$show_temp %in% c("0", "false", "FALSE"))
+  })
+
+  show_temp <- reactive({
+    if (url_mode() == "default" && !is.null(input$show_temp_input)) {
+      input$show_temp_input
+    } else {
+      url_show_temp()
+    }
+  })
+
   output$precip_toggle_selector <- renderUI({
     req(url_mode() == "default")
 
@@ -452,15 +617,15 @@ server <- function(input, output, session) {
       # above its control, so this row lines up with them vertically
       tags$label(class = "control-label"),
       tags$div(
-        class = "precip-toggle-wrap",
-        shinyWidgets::switchInput(
-          inputId = "show_precip_input",
-          value = url_show_precip(),
-          size = "mini",
-          onStatus = "primary",
-          offStatus = "default"
-        ),
-        tags$span("Show Precipitation")
+        class = "layer-toggle-row",
+        bslib::input_switch("show_precip_input", "Show Precipitation",
+                            value = isolate(url_show_precip())),
+        # temperature only exists on the stage / water surface views
+        conditionalPanel(
+          condition = "input.top_metric == 'depth' || input.top_metric == 'wse_ft_navd88'",
+          bslib::input_switch("show_temp_input", "Show Temperature",
+                              value = isolate(url_show_temp()))
+        )
       )
     )
   })
@@ -749,10 +914,20 @@ server <- function(input, output, session) {
       filter(code %in% transect_map[[input$transect_select]])
   })
   
-  output$combined_plot <- renderPlotly({ 
-    
+  # TRUE on phone-width screens (< 768px), reported by the page's JS. The plot
+  # waits for the first report so it draws once, in the right layout.
+  is_mobile <- reactive({
+    req(!is.null(input$is_mobile))
+    isTRUE(input$is_mobile)
+  })
+
+  output$combined_plot <- renderPlotly({
+
+    mob <- is_mobile()
+
+    # on phones: no modebar, and no scroll-wheel zoom
     p <- plot_ly() |>
-      config(displayModeBar = TRUE)
+      config(displayModeBar = !mob, scrollZoom = FALSE, displaylogo = FALSE)
     
     base_df <- filtered_df()
     validate(need(nrow(base_df) > 0, "No data available for the selected date range."))
@@ -866,7 +1041,7 @@ server <- function(input, output, session) {
       }
       
       # ---- Temperature traces ----
-      for (s in sites_stage$code) {
+      if (show_temp()) for (s in sites_stage$code) {
         df_s <- base_df |> filter(code == s) |> downsample_for_plot()
         
         # Water temperature (solid)
@@ -883,6 +1058,7 @@ server <- function(input, output, session) {
           text = paste(site_labels[[s]], "\nWater Temperature", sprintf("%.1f °F", df_s$water_temperature)),
           hoverinfo = "text+x",
           connectgaps = FALSE,
+          xaxis = "x2",
           yaxis = "y2"
         )
         
@@ -899,6 +1075,7 @@ server <- function(input, output, session) {
           text = paste(site_labels[[s]], "\nAir Temperature", sprintf("%.1f °F", df_s$air_temperature)),
           hoverinfo = "text+x",
           connectgaps = FALSE,
+          xaxis = "x2",
           yaxis = "y2"
         )
       }
@@ -955,6 +1132,7 @@ server <- function(input, output, session) {
         type = "bar",
         name = "Precipitation",
         legendgroup = "precip",
+        legendrank = 1,                    # legend order follows the panel order, top first
         text = NULL,                       # remove bar labels
         hovertext = paste0(
           format(precip_df$timestamp, "%b %d, %Y %H:%M"), " - ", format(precip_df$timestamp  + lubridate::hours(1), "%b %d, %Y %H:%M"), "<br>",
@@ -963,6 +1141,7 @@ server <- function(input, output, session) {
         hoverinfo = "text",
         marker = list(color = "rgba(64,64,64,0.5)"),
         width = 3600 * 1000,               # 1 hour in ms
+        xaxis = "x3",
         yaxis = "y3",
         offset = 0                         # align left side of bar with x
       )
@@ -971,7 +1150,8 @@ server <- function(input, output, session) {
     y_domain <- if (top_metric()$col %in% c("gw_depth_ft", "gwe_ft_navd88")) {
       if (show_precip()) c(0, 0.825) else c(0, 1)
     } else {
-      if (show_precip()) c(0.3, 0.825) else c(0.3, 1)
+      lo <- if (show_temp()) 0.3 else 0
+      if (show_precip()) c(lo, 0.825) else c(lo, 1)
     }
     
   # add secondary Rumsey axis where relevant
@@ -1022,33 +1202,40 @@ server <- function(input, output, session) {
     
     
   # ---- Layout with dynamic vertical sizing ----
-  layout_args <- list(
-    dragmode = "zoom",
-    xaxis = list(
+  # one time axis per panel (all matched to the main one) so every panel gets
+  # its own vertical gridlines; only the topmost panel's axis shows tick
+  # labels, at the top of the whole plot (see label_axis below)
+  x_axis <- function(anchor) {
+    c(list(
       title = "",
       domain = c(0, 1),
-      side = "top",
+      anchor = anchor,
+      showticklabels = FALSE,
+      showgrid = TRUE,
+      gridcolor = "rgba(0,0,0,0.1)",
+      zeroline = FALSE,
       showspikes = TRUE
-    ),
-    xaxis2 = list(
-      overlaying = "x",
-      side = "top"
-    ),
-    xaxis3 = if (show_precip()) list(
-      overlaying = "x",
-      side = "top"
-    ) else NULL,
+    ), if (anchor != "y") list(matches = "x"))
+  }
+
+  stage_metric <- top_metric()$col %in% c("depth", "wse_ft_navd88") && show_temp()
+
+  layout_args <- list(
+    dragmode = "zoom",
+    xaxis = x_axis("y"),
+    xaxis2 = if (stage_metric) x_axis("y2") else NULL,
+    xaxis3 = if (show_precip()) x_axis("y3") else NULL,
     yaxis = list(
       title = tm$label,
       domain = y_domain,
       fixedrange = TRUE,
       range = c(min_y, max_y)
     ),
-    yaxis2 = list(
-      title = "Temperature (°F)",
+    yaxis2 = if (stage_metric) list(
+      title = "Temperature (\u00b0F)",
       domain = c(0, 0.3),
       fixedrange = TRUE
-    ),
+    ) else NULL,
     yaxis3 = if (show_precip()) list(
       title = "Hourly Precip (in)",
       domain = c(0.9, 1.0),
@@ -1065,7 +1252,41 @@ server <- function(input, output, session) {
     ),
     margin = list(t = 40, b = 60, l = 60, r = if (!is.null(rumsey_axis)) 60 else 20)
   )
-    
+
+  label_axis <- if (show_precip()) "xaxis3" else "xaxis"
+  layout_args[[label_axis]]$showticklabels <- TRUE
+  layout_args[[label_axis]]$side <- "top"
+
+  if (mob) {
+    # phone layout: touch pans instead of box-zooming, upright sparse date
+    # labels, tight margins (top keeps room for the date axis), and the
+    # legend starts hidden until the 'Legend' button (see the UI) turns it on;
+    # tapping a line shows its site name
+    layout_args$dragmode <- "pan"
+    for (ax in c("xaxis", "xaxis2", "xaxis3")) {
+      if (!is.null(layout_args[[ax]])) {
+        layout_args[[ax]]$tickangle <- 0
+        layout_args[[ax]]$nticks <- 4
+      }
+    }
+    for (ax in c("yaxis", "yaxis2", "yaxis3")) {
+      if (!is.null(layout_args[[ax]])) layout_args[[ax]]$automargin <- TRUE
+    }
+    layout_args$showlegend <- FALSE
+    # when shown it overlays the bottom of the plot as a wrapped strip
+    layout_args$legend <- list(
+      orientation = "h",
+      x = 0, xanchor = "left",
+      y = 0.01, yanchor = "bottom",
+      tracegroupgap = 2,
+      font = list(size = 9),
+      bgcolor = "rgba(255,255,255,0.93)",
+      bordercolor = "rgba(0,0,0,0.2)",
+      borderwidth = 1
+    )
+    layout_args$margin <- list(t = 30, b = 10, l = 40, r = if (!is.null(rumsey_axis)) 40 else 10)
+  }
+
   if (!is.null(rumsey_axis)) layout_args$yaxis4 <- rumsey_axis
   
   do.call(layout, c(list(p), layout_args))
@@ -1130,6 +1351,13 @@ server <- function(input, output, session) {
            legend.position = "none")
   })
   
+  # The toolbar sits in a collapsed accordion on phones, and Shiny suspends
+  # outputs that are hidden -- but the plots need these inputs to exist
+  for (id in c("date_range_selector", "top_metric_selector",
+               "precip_toggle_selector", "gw_time_selector")) {
+    outputOptions(output, id, suspendWhenHidden = FALSE)
+  }
+
 }
 
 shinyApp(ui, server)
