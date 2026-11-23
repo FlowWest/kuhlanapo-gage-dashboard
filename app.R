@@ -53,6 +53,9 @@ ZERO_RUMSEY_NAVD88 <- 1320.74
 idw_obj <- readRDS(here::here("data-raw", "idw_precomputed.rds"))
 kuhlanapo_bnd <- readRDS(here::here("data", "kuhlanapo_bnd.rds"))
 
+# process-wide store for the shared pivoted series (see pivot_bundle in server)
+pivot_cache <- new.env()
+
 # Thin a single series to at most `max_points` before it's added as a plotly
 # trace. Wide date ranges (e.g. Jan-present) at native ~15-min cadence across
 # up to 10 piezometer traces produced 100k+ points and a 20+MB JSON payload,
@@ -645,7 +648,7 @@ server <- function(input, output, session) {
     # clamp the rolling window to the latest timestamp actually on hand so it
     # doesn't default to an empty range
     latest_stage_date <- tryCatch(
-      as.Date(max(ts_data()$timestamp, na.rm = TRUE)),
+      as.Date(pivot_bundle()$max_ts),
       error = function(e) Sys.Date()
     )
     if (is.na(latest_stage_date) || is.infinite(as.numeric(latest_stage_date))) {
@@ -858,10 +861,39 @@ server <- function(input, output, session) {
     df
   })
   
+  # The cleaned/pivoted series is identical for every viewer, so it is built
+  # once per process and shared (keyed on the cache files' mtimes and the
+  # smooth option) rather than rebuilt per session: the raw 1.8M-row table plus
+  # the pivot copies per session ran the shinyapps.io instance out of memory
+  # when a few sessions overlapped. Only the two newest entries are kept.
+  pivot_bundle <- reactive({
+    key <- paste(
+      format(file.mtime(cache_data_file_hydrovu), "%Y%m%d%H%M%OS3"),
+      format(file.mtime(cache_data_file_lakelevel), "%Y%m%d%H%M%OS3"),
+      url_smooth()
+    )
+    hit <- pivot_cache[[key]]
+    if (!is.null(hit)) {
+      # still let a stale cache trigger its async refresh
+      if (cache_is_stale(cache_data_file_hydrovu)) invisible(ts_data())
+      return(hit)
+    }
+    ts <- ts_data()
+    bundle <- list(
+      df = build_df_pivot(ts, ll_data(), smooth = url_smooth()),
+      max_ts = max(ts$timestamp, na.rm = TRUE)
+    )
+    rm(ts); gc()
+    old <- setdiff(ls(pivot_cache), key)
+    if (length(old) > 1) rm(list = head(old[order(old)], length(old) - 1), envir = pivot_cache)
+    assign(key, bundle, envir = pivot_cache)
+    bundle
+  })
+
   df_pivot <- reactive({
     req(input$date_range)
-    build_df_pivot(ts_data(), ll_data(), smooth = url_smooth())
-    })
+    pivot_bundle()$df
+  })
   
   filtered_df <- reactive({
     df <- df_pivot()
